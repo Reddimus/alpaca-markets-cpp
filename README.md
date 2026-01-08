@@ -109,7 +109,7 @@ int main() {
 
 ## Project Structure
 
-```
+```text
 alpaca-markets-cpp/
 ├── CMakeLists.txt          # Main CMake configuration
 ├── Makefile                # Developer workflow targets
@@ -131,12 +131,14 @@ alpaca-markets-cpp/
 ### Client Methods
 
 #### Account
+
 - `getAccount()` - Get account information
 - `getAccountConfigurations()` - Get account settings
 - `updateAccountConfigurations()` - Update account settings
 - `getAccountActivity()` - Get account activity history
 
 #### Orders
+
 - `getOrders()` - List orders
 - `getOrder()` - Get specific order
 - `submitOrder()` - Submit new order
@@ -145,21 +147,25 @@ alpaca-markets-cpp/
 - `cancelOrders()` - Cancel all orders
 
 #### Positions
+
 - `getPositions()` - List all positions
 - `getPosition()` - Get position for symbol
 - `closePosition()` - Close position
 - `closePositions()` - Close all positions
 
 #### Assets
+
 - `getAssets()` - List assets
 - `getAsset()` - Get asset details
 
 #### Market Data (v2)
+
 - `getBars()` - Get historical bar data
 - `getLatestTrade()` - Get latest trade for symbol
 - `getLatestQuote()` - Get latest quote for symbol
 
 #### Watchlists
+
 - `getWatchlists()` - List watchlists
 - `getWatchlist()` - Get watchlist by ID
 - `createWatchlist()` - Create new watchlist
@@ -167,18 +173,19 @@ alpaca-markets-cpp/
 - `deleteWatchlist()` - Delete watchlist
 
 #### Clock & Calendar
+
 - `getClock()` - Get market clock
 - `getCalendar()` - Get market calendar
 
 ## Make Targets
 
-| Target | Description |
-|--------|-------------|
-| `make build` | Build the project |
-| `make test` | Run unit tests |
-| `make lint` | Run linting (requires clang-format, clang-tidy) |
-| `make clean` | Remove build directory |
-| `make help` | Show available targets |
+| Target       | Description                                      |
+|--------------|--------------------------------------------------|
+| `make build` | Build the project                                |
+| `make test`  | Run unit tests                                   |
+| `make lint`  | Run linting (requires clang-format, clang-tidy)  |
+| `make clean` | Remove build directory                           |
+| `make help`  | Show available targets                           |
 
 ## Migration from Deprecated Library
 
