@@ -1,0 +1,37 @@
+---
+Language: Cpp
+BasedOnStyle: Google
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AlwaysBreakTemplateDeclarations: Yes
+PointerAlignment: Left
+ReferenceAlignment: Left
+SpaceAfterCStyleCast: false
+SpaceAfterTemplateKeyword: true
+SpaceBeforeParens: ControlStatements
+SpacesInParentheses: false
+AccessModifierOffset: -4
+AlignConsecutiveAssignments: false
+AlignConsecutiveDeclarations: false
+AlignOperands: true
+AlignTrailingComments: true
+BinPackArguments: true
+BinPackParameters: true
+BreakConstructorInitializers: BeforeColon
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<alpaca/'
+    Priority: 1
+  - Regex: '^<.*\.h(pp)?>'
+    Priority: 2
+  - Regex: '^<.*'
+    Priority: 3
+  - Regex: '.*'
+    Priority: 4
+SortIncludes: true

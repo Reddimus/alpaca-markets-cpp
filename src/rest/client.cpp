@@ -1,0 +1,1089 @@
+#include <alpaca/markets/client.hpp>
+
+#include <httplib.h>
+#include <rapidjson/document.h>
+#include <rapidjson/stringbuffer.h>
+#include <rapidjson/writer.h>
+
+#include <iostream>
+#include <sstream>
+#include <utility>
+
+namespace alpaca::markets {
+
+namespace {
+const char* kJSONContentType = "application/json";
+
+httplib::Headers makeHeaders(const Environment& environment) {
+    return {
+        {"APCA-API-KEY-ID", environment.getAPIKeyID()},
+        {"APCA-API-SECRET-KEY", environment.getAPISecretKey()},
+    };
+}
+}  // namespace
+
+Client::Client(Environment& environment) {
+    if (!environment.hasBeenParsed()) {
+        if (auto s = environment.parse(); !s.ok()) {
+            std::cerr << "Error parsing the environment: " << s.getMessage() << std::endl;
+        }
+    }
+    environment_ = environment;
+}
+
+// ==================== Account ====================
+
+std::pair<Status, Account> Client::getAccount() const {
+    Account account;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get("/v2/account", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/account returned an empty response"), account);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/account returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), account);
+    }
+
+    return std::make_pair(account.fromJSON(resp->body), account);
+}
+
+std::pair<Status, AccountConfigurations> Client::getAccountConfigurations() const {
+    AccountConfigurations account_configurations;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get("/v2/account/configurations", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
+                              account_configurations);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/account/configurations returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), account_configurations);
+    }
+
+    return std::make_pair(account_configurations.fromJSON(resp->body), account_configurations);
+}
+
+std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(bool no_shorting,
+                                                                             const std::string& dtbp_check,
+                                                                             const std::string& trade_confirm_email,
+                                                                             bool suspend_trade) const {
+    AccountConfigurations account_configurations;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+    writer.StartObject();
+
+    writer.Key("no_shorting");
+    writer.Bool(no_shorting);
+
+    writer.Key("dtbp_check");
+    writer.String(dtbp_check.c_str());
+
+    writer.Key("trade_confirm_email");
+    writer.String(trade_confirm_email.c_str());
+
+    writer.Key("suspend_trade");
+    writer.Bool(suspend_trade);
+
+    writer.EndObject();
+    auto body = s.GetString();
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
+                              account_configurations);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/account/configurations returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), account_configurations);
+    }
+
+    return std::make_pair(account_configurations.fromJSON(resp->body), account_configurations);
+}
+
+std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Client::getAccountActivity(
+    const std::vector<std::string>& activity_types) const {
+    std::vector<std::variant<TradeActivity, NonTradeActivity>> activities;
+
+    std::string url = "/v2/account/activities";
+    if (!activity_types.empty()) {
+        std::string query_string;
+        for (size_t i = 0; i < activity_types.size(); ++i) {
+            query_string += activity_types[i];
+            query_string += ",";
+        }
+        query_string.pop_back();
+        url += "?activity_types=" + query_string;
+    }
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), activities);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), activities);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing activities JSON"), activities);
+    }
+    for (auto& a : d.GetArray()) {
+        std::string activity_type;
+        if (a.HasMember("activity_type") && a["activity_type"].IsString()) {
+            activity_type = a["activity_type"].GetString();
+        } else {
+            return std::make_pair(Status(1, "Activity didn't have activity_type attribute"), activities);
+        }
+
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        a.Accept(writer);
+
+        if (activity_type == "FILL") {
+            TradeActivity activity;
+            if (auto status = activity.fromJSON(s.GetString()); !status.ok()) {
+                return std::make_pair(status, activities);
+            }
+            activities.push_back(activity);
+        } else {
+            NonTradeActivity activity;
+            if (auto status = activity.fromJSON(s.GetString()); !status.ok()) {
+                return std::make_pair(status, activities);
+            }
+            activities.push_back(activity);
+        }
+    }
+
+    return std::make_pair(Status(), activities);
+}
+
+// ==================== Orders ====================
+
+std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) const {
+    Order order;
+
+    auto url = "/v2/orders/" + id;
+    if (nested) {
+        url += "?nested=true";
+    }
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    return std::make_pair(order.fromJSON(resp->body), order);
+}
+
+std::pair<Status, Order> Client::getOrderByClientOrderID(const std::string& client_order_id) const {
+    Order order;
+
+    auto url = "/v2/orders:by_client_order_id?client_order_id=" + client_order_id;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    return std::make_pair(order.fromJSON(resp->body), order);
+}
+
+std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int limit, const std::string& after,
+                                                        const std::string& until, OrderDirection direction,
+                                                        bool nested) const {
+    std::vector<Order> orders;
+
+    httplib::Params params{
+        {"status", actionStatusToString(status)},
+        {"limit", std::to_string(limit)},
+        {"direction", orderDirectionToString(direction)},
+    };
+    if (!after.empty()) {
+        params.insert({"after", after});
+    }
+    if (!until.empty()) {
+        params.insert({"until", until});
+    }
+    if (nested) {
+        params.insert({"nested", "true"});
+    }
+    auto query_string = httplib::detail::params_to_query_str(params);
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto url = "/v2/orders?" + query_string;
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), orders);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), orders);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
+    }
+    for (auto& o : d.GetArray()) {
+        Order order;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto parse_status = order.fromJSON(s.GetString()); !parse_status.ok()) {
+            return std::make_pair(parse_status, orders);
+        }
+        orders.push_back(order);
+    }
+
+    return std::make_pair(Status(), orders);
+}
+
+std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quantity, OrderSide side, OrderType type,
+                                             OrderTimeInForce tif, const std::string& limit_price,
+                                             const std::string& stop_price, bool extended_hours,
+                                             const std::string& client_order_id, OrderClass order_class,
+                                             TakeProfitParams* take_profit_params,
+                                             StopLossParams* stop_loss_params) const {
+    Order order;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+    writer.StartObject();
+
+    writer.Key("symbol");
+    writer.String(symbol.c_str());
+
+    writer.Key("qty");
+    writer.Int(quantity);
+
+    writer.Key("side");
+    writer.String(orderSideToString(side).c_str());
+
+    writer.Key("type");
+    writer.String(orderTypeToString(type).c_str());
+
+    writer.Key("time_in_force");
+    writer.String(orderTimeInForceToString(tif).c_str());
+
+    if (!limit_price.empty()) {
+        writer.Key("limit_price");
+        writer.String(limit_price.c_str());
+    }
+
+    if (!stop_price.empty()) {
+        writer.Key("stop_price");
+        writer.String(stop_price.c_str());
+    }
+
+    if (extended_hours) {
+        writer.Key("extended_hours");
+        writer.Bool(extended_hours);
+    }
+
+    if (!client_order_id.empty()) {
+        writer.Key("client_order_id");
+        writer.String(client_order_id.c_str());
+    }
+
+    if (order_class != OrderClass::Simple) {
+        writer.Key("order_class");
+        writer.String(orderClassToString(order_class).c_str());
+    }
+
+    if (take_profit_params != nullptr) {
+        writer.Key("take_profit");
+        writer.StartObject();
+        if (!take_profit_params->limitPrice.empty()) {
+            writer.Key("limit_price");
+            writer.String(take_profit_params->limitPrice.c_str());
+        }
+        writer.EndObject();
+    }
+
+    if (stop_loss_params != nullptr) {
+        writer.Key("stop_loss");
+        writer.StartObject();
+        if (!stop_loss_params->limitPrice.empty()) {
+            writer.Key("limit_price");
+            writer.String(stop_loss_params->limitPrice.c_str());
+        }
+        if (!stop_loss_params->stopPrice.empty()) {
+            writer.Key("stop_price");
+            writer.String(stop_loss_params->stopPrice.c_str());
+        }
+        writer.EndObject();
+    }
+
+    writer.EndObject();
+    auto body = s.GetString();
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), order);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/orders returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    return std::make_pair(order.fromJSON(resp->body), order);
+}
+
+std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantity, OrderTimeInForce tif,
+                                              const std::string& limit_price, const std::string& stop_price,
+                                              const std::string& client_order_id) const {
+    Order order;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+    writer.StartObject();
+
+    writer.Key("qty");
+    writer.Int(quantity);
+
+    writer.Key("time_in_force");
+    writer.String(orderTimeInForceToString(tif).c_str());
+
+    if (!limit_price.empty()) {
+        writer.Key("limit_price");
+        writer.String(limit_price.c_str());
+    }
+
+    if (!stop_price.empty()) {
+        writer.Key("stop_price");
+        writer.String(stop_price.c_str());
+    }
+
+    if (!client_order_id.empty()) {
+        writer.Key("client_order_id");
+        writer.String(client_order_id.c_str());
+    }
+
+    writer.EndObject();
+    auto body = s.GetString();
+
+    auto url = "/v2/orders/" + id;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Patch(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    return std::make_pair(order.fromJSON(resp->body), order);
+}
+
+std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
+    std::vector<Order> orders;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Delete("/v2/orders", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), orders);
+    }
+
+    if (resp->status != 200 && resp->status != 207) {
+        std::ostringstream ss;
+        ss << "Call to /v2/orders returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), orders);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
+    }
+    for (auto& o : d.GetArray()) {
+        Order order;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = order.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, orders);
+        }
+        orders.push_back(order);
+    }
+
+    return std::make_pair(Status(), orders);
+}
+
+std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
+    Order order;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto url = "/v2/orders/" + id;
+    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    if (resp->status == 204) {
+        return getOrder(id);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), order);
+    }
+
+    return std::make_pair(order.fromJSON(resp->body), order);
+}
+
+// ==================== Positions ====================
+
+std::pair<Status, std::vector<Position>> Client::getPositions() const {
+    std::vector<Position> positions;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get("/v2/positions", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/positions returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), positions);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
+    }
+    for (auto& o : d.GetArray()) {
+        Position position;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = position.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, positions);
+        }
+        positions.push_back(position);
+    }
+
+    return std::make_pair(Status(), positions);
+}
+
+std::pair<Status, Position> Client::getPosition(const std::string& symbol) const {
+    Position position;
+
+    auto url = "/v2/positions/" + symbol;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), position);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), position);
+    }
+
+    return std::make_pair(position.fromJSON(resp->body), position);
+}
+
+std::pair<Status, std::vector<Position>> Client::closePositions() const {
+    std::vector<Position> positions;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Delete("/v2/positions", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
+    }
+
+    if (resp->status != 200 && resp->status != 207) {
+        std::ostringstream ss;
+        ss << "Call to /v2/positions returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), positions);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
+    }
+    for (auto& o : d.GetArray()) {
+        Position position;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = position.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, positions);
+        }
+        positions.push_back(position);
+    }
+
+    return std::make_pair(Status(), positions);
+}
+
+std::pair<Status, Position> Client::closePosition(const std::string& symbol) const {
+    Position position;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto url = "/v2/positions/" + symbol;
+    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), position);
+    }
+
+    if (resp->status == 204) {
+        return getPosition(symbol);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), position);
+    }
+
+    return std::make_pair(position.fromJSON(resp->body), position);
+}
+
+// ==================== Assets ====================
+
+std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_status, AssetClass asset_class) const {
+    std::vector<Asset> assets;
+
+    httplib::Params params{
+        {"status", actionStatusToString(asset_status)},
+        {"asset_class", assetClassToString(asset_class)},
+    };
+    auto query_string = httplib::detail::params_to_query_str(params);
+    auto url = "/v2/assets?" + query_string;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), assets);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), assets);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing assets JSON"), assets);
+    }
+    for (auto& o : d.GetArray()) {
+        Asset asset;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = asset.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, assets);
+        }
+        assets.push_back(asset);
+    }
+
+    return std::make_pair(Status(), assets);
+}
+
+std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
+    Asset asset;
+
+    auto url = "/v2/assets/" + symbol;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), asset);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), asset);
+    }
+
+    return std::make_pair(asset.fromJSON(resp->body), asset);
+}
+
+// ==================== Clock & Calendar ====================
+
+std::pair<Status, Clock> Client::getClock() const {
+    Clock clock;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get("/v2/clock", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/clock returned an empty response"), clock);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/clock returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), clock);
+    }
+
+    return std::make_pair(clock.fromJSON(resp->body), clock);
+}
+
+std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& start, const std::string& end) const {
+    std::vector<Date> dates;
+
+    auto url = "/v2/calendar?start=" + start + "&end=" + end;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), dates);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), dates);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing calendar JSON"), dates);
+    }
+    for (auto& o : d.GetArray()) {
+        Date date;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = date.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, dates);
+        }
+        dates.push_back(date);
+    }
+
+    return std::make_pair(Status(), dates);
+}
+
+// ==================== Watchlists ====================
+
+std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
+    std::vector<Watchlist> watchlists;
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get("/v2/watchlists", makeHeaders(environment_));
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlists);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/watchlists returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlists);
+    }
+
+    rapidjson::Document d;
+    if (d.Parse(resp->body.c_str()).HasParseError()) {
+        return std::make_pair(Status(1, "Received parse error when deserializing watchlists JSON"), watchlists);
+    }
+    for (auto& o : d.GetArray()) {
+        Watchlist watchlist;
+        rapidjson::StringBuffer s;
+        s.Clear();
+        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+        o.Accept(writer);
+        if (auto status = watchlist.fromJSON(s.GetString()); !status.ok()) {
+            return std::make_pair(status, watchlists);
+        }
+        watchlists.push_back(watchlist);
+    }
+
+    return std::make_pair(Status(), watchlists);
+}
+
+std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
+    Watchlist watchlist;
+
+    auto url = "/v2/watchlists/" + id;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
+}
+
+std::pair<Status, Watchlist> Client::createWatchlist(const std::string& name,
+                                                     const std::vector<std::string>& symbols) const {
+    Watchlist watchlist;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+    writer.StartObject();
+
+    writer.Key("name");
+    writer.String(name.c_str());
+
+    writer.Key("symbols");
+    writer.StartArray();
+    for (const auto& symbol : symbols) {
+        writer.String(symbol.c_str());
+    }
+    writer.EndArray();
+
+    writer.EndObject();
+    auto body = s.GetString();
+
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Post("/v2/watchlists", makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlist);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to /v2/watchlists returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
+}
+
+std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, const std::string& name,
+                                                     const std::vector<std::string>& symbols) const {
+    Watchlist watchlist;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+    writer.StartObject();
+
+    writer.Key("name");
+    writer.String(name.c_str());
+
+    writer.Key("symbols");
+    writer.StartArray();
+    for (const auto& symbol : symbols) {
+        writer.String(symbol.c_str());
+    }
+    writer.EndArray();
+
+    writer.EndObject();
+    auto body = s.GetString();
+
+    auto url = "/v2/watchlists/" + id;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Put(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
+}
+
+Status Client::deleteWatchlist(const std::string& id) const {
+    auto url = "/v2/watchlists/" + id;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return Status(1, ss.str());
+    }
+
+    if (resp->status != 200 && resp->status != 204) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return Status(1, ss.str());
+    }
+    return Status();
+}
+
+std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id, const std::string& symbol) const {
+    Watchlist watchlist;
+
+    rapidjson::StringBuffer s;
+    s.Clear();
+    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
+
+    writer.StartObject();
+    writer.Key("symbol");
+    writer.String(symbol.c_str());
+    writer.EndObject();
+    auto body = s.GetString();
+
+    auto url = "/v2/watchlists/" + id;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Post(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
+}
+
+std::pair<Status, Watchlist> Client::removeSymbolFromWatchlist(const std::string& id, const std::string& symbol) const {
+    Watchlist watchlist;
+
+    auto url = "/v2/watchlists/" + id + "/" + symbol;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), watchlist);
+    }
+    return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
+}
+
+// ==================== Portfolio ====================
+
+std::pair<Status, PortfolioHistory> Client::getPortfolioHistory(const std::string& period, const std::string& timeframe,
+                                                                const std::string& date_end,
+                                                                bool extended_hours) const {
+    PortfolioHistory portfolio_history;
+
+    std::string query_string;
+
+    if (!period.empty()) {
+        if (!query_string.empty()) {
+            query_string += "&";
+        }
+        query_string += "period=" + period;
+    }
+
+    if (!timeframe.empty()) {
+        if (!query_string.empty()) {
+            query_string += "&";
+        }
+        query_string += "timeframe=" + timeframe;
+    }
+
+    if (!date_end.empty()) {
+        if (!query_string.empty()) {
+            query_string += "&";
+        }
+        query_string += "date_end=" + date_end;
+    }
+
+    if (extended_hours) {
+        if (!query_string.empty()) {
+            query_string += "&";
+        }
+        query_string += "extended_hours=true";
+    }
+
+    if (!query_string.empty()) {
+        query_string = "?" + query_string;
+    }
+
+    auto url = "/v2/account/portfolio/history" + query_string;
+    httplib::SSLClient client(environment_.getTradingHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), portfolio_history);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), portfolio_history);
+    }
+
+    return std::make_pair(portfolio_history.fromJSON(resp->body), portfolio_history);
+}
+
+// ==================== Market Data (v2) ====================
+
+std::pair<Status, Bars> Client::getBars(const std::vector<std::string>& symbols, const std::string& start,
+                                        const std::string& end, const std::string& timeframe, unsigned int limit,
+                                        const std::string& page_token) const {
+    Bars bars;
+
+    std::string symbols_string;
+    for (size_t i = 0; i < symbols.size(); ++i) {
+        symbols_string += symbols[i];
+        if (i < symbols.size() - 1) {
+            symbols_string += ",";
+        }
+    }
+
+    httplib::Params params{
+        {"symbols", symbols_string},
+        {"timeframe", timeframe},
+        {"limit", std::to_string(limit)},
+    };
+    if (!start.empty()) {
+        params.insert({"start", start});
+    }
+    if (!end.empty()) {
+        params.insert({"end", end});
+    }
+    if (!page_token.empty()) {
+        params.insert({"page_token", page_token});
+    }
+    auto query_string = httplib::detail::params_to_query_str(params);
+
+    // Market Data API v2 endpoint
+    auto url = "/v2/stocks/bars?" + query_string;
+
+    httplib::SSLClient client(environment_.getDataHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), bars);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), bars);
+    }
+
+    return std::make_pair(bars.fromJSON(resp->body), bars);
+}
+
+std::pair<Status, LatestTrade> Client::getLatestTrade(const std::string& symbol) const {
+    LatestTrade latest_trade;
+
+    // Market Data API v2 endpoint
+    auto url = "/v2/stocks/" + symbol + "/trades/latest";
+
+    httplib::SSLClient client(environment_.getDataHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), latest_trade);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), latest_trade);
+    }
+
+    return std::make_pair(latest_trade.fromJSON(resp->body), latest_trade);
+}
+
+std::pair<Status, LatestQuote> Client::getLatestQuote(const std::string& symbol) const {
+    LatestQuote latest_quote;
+
+    // Market Data API v2 endpoint
+    auto url = "/v2/stocks/" + symbol + "/quotes/latest";
+
+    httplib::SSLClient client(environment_.getDataHost());
+    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    if (!resp) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an empty response";
+        return std::make_pair(Status(1, ss.str()), latest_quote);
+    }
+
+    if (resp->status != 200) {
+        std::ostringstream ss;
+        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        return std::make_pair(Status(1, ss.str()), latest_quote);
+    }
+
+    return std::make_pair(latest_quote.fromJSON(resp->body), latest_quote);
+}
+
+}  // namespace alpaca::markets

@@ -1,2 +1,24 @@
-# Add .env
+# Environment files
 .env
+
+# Build directory
+build/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Compiled objects
+*.o
+*.a
+*.so
+*.dylib
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
