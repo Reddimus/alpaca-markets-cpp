@@ -9,13 +9,14 @@ A modern C++ SDK for the [Alpaca](https://alpaca.markets/) Trading and Market Da
 - **Modern C++20**: Clean API with proper namespacing and modern idioms
 - **CMake-based**: Easy integration with CMake-based projects
 - **Header-only friendly**: Include only what you need
+- **Warning-free builds**: Third-party library warnings silenced; our code compiles with strict warnings (`-Wall -Wextra -Wpedantic`)
 
 ## Quick Start
 
 ### Prerequisites
 
 - C++20 compatible compiler (GCC 11+, Clang 14+, MSVC 2022+)
-- CMake 3.20+
+- CMake 3.25+
 - OpenSSL development libraries
 
 ### Building

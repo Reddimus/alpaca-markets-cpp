@@ -9,6 +9,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile commands for clang-tidy
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Compiler warnings for our code (strict)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang|AppleClang")
+    add_compile_options(-Wall -Wextra -Wpedantic)
+elseif(MSVC)
+    add_compile_options(/W4)
+endif()
+
 # Options
 option(ALPACA_MARKETS_BUILD_TESTS "Build tests" ON)
 option(ALPACA_MARKETS_BUILD_EXAMPLES "Build examples" ON)
@@ -49,7 +56,8 @@ add_library(alpaca_markets_models OBJECT ${ALPACA_MODELS_SOURCES})
 target_include_directories(alpaca_markets_models PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_include_directories(alpaca_markets_models PRIVATE
+# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
+target_include_directories(alpaca_markets_models SYSTEM PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
@@ -59,7 +67,8 @@ add_library(alpaca_markets_rest OBJECT ${ALPACA_REST_SOURCES})
 target_include_directories(alpaca_markets_rest PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_include_directories(alpaca_markets_rest PRIVATE
+# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
+target_include_directories(alpaca_markets_rest SYSTEM PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 target_link_libraries(alpaca_markets_rest PUBLIC httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
@@ -71,7 +80,8 @@ add_library(alpaca_markets_stream OBJECT ${ALPACA_STREAM_SOURCES})
 target_include_directories(alpaca_markets_stream PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-target_include_directories(alpaca_markets_stream PRIVATE
+# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
+target_include_directories(alpaca_markets_stream SYSTEM PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
@@ -90,8 +100,8 @@ target_include_directories(alpaca_markets PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-# RapidJSON include directory
-target_include_directories(alpaca_markets PRIVATE
+# RapidJSON include directory (SYSTEM to suppress third-party warnings)
+target_include_directories(alpaca_markets SYSTEM PRIVATE
     ${rapidjson_SOURCE_DIR}/include
 )
 
@@ -119,6 +129,20 @@ if(ALPACA_MARKETS_BUILD_TESTS)
         GIT_TAG v1.14.0
     )
     FetchContent_MakeAvailable(googletest)
+    
+    # Suppress warnings for third-party googletest/googlemock targets
+    if(TARGET gtest)
+        target_compile_options(gtest PRIVATE -w)
+    endif()
+    if(TARGET gtest_main)
+        target_compile_options(gtest_main PRIVATE -w)
+    endif()
+    if(TARGET gmock)
+        target_compile_options(gmock PRIVATE -w)
+    endif()
+    if(TARGET gmock_main)
+        target_compile_options(gmock_main PRIVATE -w)
+    endif()
     
     add_subdirectory(tests)
 endif()
