@@ -230,27 +230,6 @@ alpaca-markets-cpp/
 | `make clean` | Remove build directory                           |
 | `make help`  | Show available targets                           |
 
-## Migration from Deprecated Library
-
-If migrating from the `Deprecated/` library:
-
-1. Update includes: `#include "alpaca/alpaca.h"` → `#include <alpaca/markets/markets.hpp>`
-2. Update namespace: `alpaca::` → `alpaca::markets::`
-3. Update environment parsing (same API, new namespace)
-4. Market data methods now use v2 API (response format changed)
-
-### Breaking Changes
-
-- Market data endpoints updated to v2 API
-- `getLastTrade()` → `getLatestTrade()` (legacy alias available)
-- `getLastQuote()` → `getLatestQuote()` (legacy alias available)
-- Bar timestamps now use ISO 8601 strings instead of Unix timestamps
-- Quote/Trade responses include additional v2 fields
-
 ## License
 
 See [LICENSE](LICENSE) file.
-
-## Contributing
-
-Contributions are welcome! Please see the [Deprecated/CONTRIBUTING.md](Deprecated/CONTRIBUTING.md) for guidelines.
