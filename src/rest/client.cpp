@@ -24,7 +24,7 @@ httplib::Headers makeHeaders(const Environment& environment) {
 
 Client::Client(Environment& environment) {
     if (!environment.hasBeenParsed()) {
-        if (auto s = environment.parse(); !s.ok()) {
+        if (Status s = environment.parse(); !s.ok()) {
             std::cerr << "Error parsing the environment: " << s.getMessage() << std::endl;
         }
     }
@@ -37,7 +37,7 @@ std::pair<Status, Account> Client::getAccount() const {
     Account account;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get("/v2/account", makeHeaders(environment_));
+    httplib::Result resp = client.Get("/v2/account", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account returned an empty response"), account);
     }
@@ -55,7 +55,7 @@ std::pair<Status, AccountConfigurations> Client::getAccountConfigurations() cons
     AccountConfigurations account_configurations;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get("/v2/account/configurations", makeHeaders(environment_));
+    httplib::Result resp = client.Get("/v2/account/configurations", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
                               account_configurations);
@@ -94,10 +94,10 @@ std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(boo
     writer.Bool(suspend_trade);
 
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
                               account_configurations);
@@ -128,7 +128,7 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
     }
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -160,13 +160,13 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
 
         if (activity_type == "FILL") {
             TradeActivity activity;
-            if (auto status = activity.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = activity.fromJSON(s.GetString()); !status.ok()) {
                 return std::make_pair(status, activities);
             }
             activities.push_back(activity);
         } else {
             NonTradeActivity activity;
-            if (auto status = activity.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = activity.fromJSON(s.GetString()); !status.ok()) {
                 return std::make_pair(status, activities);
             }
             activities.push_back(activity);
@@ -181,13 +181,13 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
 std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) const {
     Order order;
 
-    auto url = "/v2/orders/" + id;
+    std::string url = "/v2/orders/" + id;
     if (nested) {
         url += "?nested=true";
     }
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -206,10 +206,10 @@ std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) co
 std::pair<Status, Order> Client::getOrderByClientOrderID(const std::string& client_order_id) const {
     Order order;
 
-    auto url = "/v2/orders:by_client_order_id?client_order_id=" + client_order_id;
+    std::string url = "/v2/orders:by_client_order_id?client_order_id=" + client_order_id;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -244,10 +244,10 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
     if (nested) {
         params.insert({"nested", "true"});
     }
-    auto query_string = httplib::detail::params_to_query_str(params);
+    std::string query_string = httplib::detail::params_to_query_str(params);
     httplib::SSLClient client(environment_.getTradingHost());
-    auto url = "/v2/orders?" + query_string;
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    std::string url = "/v2/orders?" + query_string;
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -270,7 +270,7 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto parse_status = order.fromJSON(s.GetString()); !parse_status.ok()) {
+        if (Status parse_status = order.fromJSON(s.GetString()); !parse_status.ok()) {
             return std::make_pair(parse_status, orders);
         }
         orders.push_back(order);
@@ -357,10 +357,10 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
     }
 
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), order);
     }
@@ -406,12 +406,12 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
     }
 
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
-    auto url = "/v2/orders/" + id;
+    std::string url = "/v2/orders/" + id;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Patch(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Patch(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -431,7 +431,7 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
     std::vector<Order> orders;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Delete("/v2/orders", makeHeaders(environment_));
+    httplib::Result resp = client.Delete("/v2/orders", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), orders);
     }
@@ -452,7 +452,7 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = order.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = order.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, orders);
         }
         orders.push_back(order);
@@ -465,8 +465,8 @@ std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
     Order order;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto url = "/v2/orders/" + id;
-    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    std::string url = "/v2/orders/" + id;
+    httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -492,7 +492,7 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
     std::vector<Position> positions;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get("/v2/positions", makeHeaders(environment_));
+    httplib::Result resp = client.Get("/v2/positions", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
     }
@@ -513,7 +513,7 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = position.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = position.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, positions);
         }
         positions.push_back(position);
@@ -525,10 +525,10 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
 std::pair<Status, Position> Client::getPosition(const std::string& symbol) const {
     Position position;
 
-    auto url = "/v2/positions/" + symbol;
+    std::string url = "/v2/positions/" + symbol;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -548,7 +548,7 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
     std::vector<Position> positions;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Delete("/v2/positions", makeHeaders(environment_));
+    httplib::Result resp = client.Delete("/v2/positions", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
     }
@@ -569,7 +569,7 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = position.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = position.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, positions);
         }
         positions.push_back(position);
@@ -582,8 +582,8 @@ std::pair<Status, Position> Client::closePosition(const std::string& symbol) con
     Position position;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto url = "/v2/positions/" + symbol;
-    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    std::string url = "/v2/positions/" + symbol;
+    httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -612,11 +612,11 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
         {"status", actionStatusToString(asset_status)},
         {"asset_class", assetClassToString(asset_class)},
     };
-    auto query_string = httplib::detail::params_to_query_str(params);
-    auto url = "/v2/assets?" + query_string;
+    std::string query_string = httplib::detail::params_to_query_str(params);
+    std::string url = "/v2/assets?" + query_string;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -639,7 +639,7 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = asset.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = asset.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, assets);
         }
         assets.push_back(asset);
@@ -651,10 +651,10 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
 std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
     Asset asset;
 
-    auto url = "/v2/assets/" + symbol;
+    std::string url = "/v2/assets/" + symbol;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -676,7 +676,7 @@ std::pair<Status, Clock> Client::getClock() const {
     Clock clock;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get("/v2/clock", makeHeaders(environment_));
+    httplib::Result resp = client.Get("/v2/clock", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/clock returned an empty response"), clock);
     }
@@ -693,9 +693,9 @@ std::pair<Status, Clock> Client::getClock() const {
 std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& start, const std::string& end) const {
     std::vector<Date> dates;
 
-    auto url = "/v2/calendar?start=" + start + "&end=" + end;
+    std::string url = "/v2/calendar?start=" + start + "&end=" + end;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -718,7 +718,7 @@ std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& star
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = date.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = date.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, dates);
         }
         dates.push_back(date);
@@ -733,7 +733,7 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
     std::vector<Watchlist> watchlists;
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get("/v2/watchlists", makeHeaders(environment_));
+    httplib::Result resp = client.Get("/v2/watchlists", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlists);
     }
@@ -754,7 +754,7 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         o.Accept(writer);
-        if (auto status = watchlist.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = watchlist.fromJSON(s.GetString()); !status.ok()) {
             return std::make_pair(status, watchlists);
         }
         watchlists.push_back(watchlist);
@@ -766,9 +766,9 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
 std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
     Watchlist watchlist;
 
-    auto url = "/v2/watchlists/" + id;
+    std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -804,10 +804,10 @@ std::pair<Status, Watchlist> Client::createWatchlist(const std::string& name,
     writer.EndArray();
 
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Post("/v2/watchlists", makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Post("/v2/watchlists", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlist);
     }
@@ -841,11 +841,11 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
     writer.EndArray();
 
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
-    auto url = "/v2/watchlists/" + id;
+    std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Put(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Put(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -862,9 +862,9 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
 }
 
 Status Client::deleteWatchlist(const std::string& id) const {
-    auto url = "/v2/watchlists/" + id;
+    std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -890,11 +890,11 @@ std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id,
     writer.Key("symbol");
     writer.String(symbol.c_str());
     writer.EndObject();
-    auto body = s.GetString();
+    const char* body = s.GetString();
 
-    auto url = "/v2/watchlists/" + id;
+    std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Post(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp = client.Post(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -913,9 +913,9 @@ std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id,
 std::pair<Status, Watchlist> Client::removeSymbolFromWatchlist(const std::string& id, const std::string& symbol) const {
     Watchlist watchlist;
 
-    auto url = "/v2/watchlists/" + id + "/" + symbol;
+    std::string url = "/v2/watchlists/" + id + "/" + symbol;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Delete(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -971,9 +971,9 @@ std::pair<Status, PortfolioHistory> Client::getPortfolioHistory(const std::strin
         query_string = "?" + query_string;
     }
 
-    auto url = "/v2/account/portfolio/history" + query_string;
+    std::string url = "/v2/account/portfolio/history" + query_string;
     httplib::SSLClient client(environment_.getTradingHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -1018,13 +1018,13 @@ std::pair<Status, Bars> Client::getBars(const std::vector<std::string>& symbols,
     if (!page_token.empty()) {
         params.insert({"page_token", page_token});
     }
-    auto query_string = httplib::detail::params_to_query_str(params);
+    std::string query_string = httplib::detail::params_to_query_str(params);
 
     // Market Data API v2 endpoint
-    auto url = "/v2/stocks/bars?" + query_string;
+    std::string url = "/v2/stocks/bars?" + query_string;
 
     httplib::SSLClient client(environment_.getDataHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -1044,10 +1044,10 @@ std::pair<Status, LatestTrade> Client::getLatestTrade(const std::string& symbol)
     LatestTrade latest_trade;
 
     // Market Data API v2 endpoint
-    auto url = "/v2/stocks/" + symbol + "/trades/latest";
+    std::string url = "/v2/stocks/" + symbol + "/trades/latest";
 
     httplib::SSLClient client(environment_.getDataHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";
@@ -1067,10 +1067,10 @@ std::pair<Status, LatestQuote> Client::getLatestQuote(const std::string& symbol)
     LatestQuote latest_quote;
 
     // Market Data API v2 endpoint
-    auto url = "/v2/stocks/" + symbol + "/quotes/latest";
+    std::string url = "/v2/stocks/" + symbol + "/quotes/latest";
 
     httplib::SSLClient client(environment_.getDataHost());
-    auto resp = client.Get(url.c_str(), makeHeaders(environment_));
+    httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
         ss << "Call to " << url << " returned an empty response";

@@ -18,7 +18,7 @@ TEST(BarTest, FromJSON) {
     })";
 
     Bar bar;
-    auto status = bar.fromJSON(json);
+    Status status = bar.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(bar.timestamp, "2023-01-01T09:30:00Z");
@@ -64,7 +64,7 @@ TEST(BarsTest, FromJSON) {
     })";
 
     Bars bars;
-    auto status = bars.fromJSON(json);
+    Status status = bars.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(bars.bars.size(), 2u);
@@ -72,13 +72,13 @@ TEST(BarsTest, FromJSON) {
     EXPECT_EQ(bars.bars["GOOG"].size(), 1u);
     EXPECT_EQ(bars.next_page_token, "token123");
     
-    auto& aapl_bar = bars.bars["AAPL"][0];
+    Bar& aapl_bar = bars.bars["AAPL"][0];
     EXPECT_DOUBLE_EQ(aapl_bar.open_price, 150.25);
     EXPECT_DOUBLE_EQ(aapl_bar.close_price, 151.75);
 }
 
 TEST(BarTest, FromJSONParseError) {
     Bar bar;
-    auto status = bar.fromJSON("invalid json");
+    Status status = bar.fromJSON("invalid json");
     EXPECT_FALSE(status.ok());
 }

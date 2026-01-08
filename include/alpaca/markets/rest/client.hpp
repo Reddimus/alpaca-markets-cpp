@@ -25,13 +25,13 @@ namespace alpaca::markets {
  * @brief The API client object for interacting with the Alpaca Trading API.
  *
  * @code{.cpp}
- *   auto env = alpaca::markets::Environment();
- *   if (auto status = env.parse(); !status.ok()) {
+ *   alpaca::markets::Environment env;
+ *   if (alpaca::markets::Status status = env.parse(); !status.ok()) {
  *     std::cerr << "Error parsing config from environment: "
  *               << status.getMessage() << std::endl;
  *     return status.getCode();
  *   }
- *   auto client = alpaca::markets::Client(env);
+ *   alpaca::markets::Client client(env);
  * @endcode
  */
 class Client {

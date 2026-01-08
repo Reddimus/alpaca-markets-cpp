@@ -39,7 +39,7 @@ Or include everything via the umbrella header:
 
 int main() {
     alpaca::markets::Environment env;
-    if (auto status = env.parse(); !status.ok()) {
+    if (alpaca::markets::Status status = env.parse(); !status.ok()) {
         return 1;
     }
     

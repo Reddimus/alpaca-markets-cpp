@@ -47,7 +47,7 @@ Status LatestTrade::fromJSON(const std::string& json) {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         d["trade"].Accept(writer);
-        if (auto status = trade.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = trade.fromJSON(s.GetString()); !status.ok()) {
             return status;
         }
     }

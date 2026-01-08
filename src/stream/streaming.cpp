@@ -113,7 +113,7 @@ std::pair<Status, Reply> parseReply(const std::string& text) {
 
 Status Handler::run(Environment& env) {
     if (!env.hasBeenParsed()) {
-        if (auto status = env.parse(); !status.ok()) {
+        if (Status status = env.parse(); !status.ok()) {
             return status;
         }
     }

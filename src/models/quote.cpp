@@ -48,7 +48,7 @@ Status LatestQuote::fromJSON(const std::string& json) {
         s.Clear();
         rapidjson::Writer<rapidjson::StringBuffer> writer(s);
         d["quote"].Accept(writer);
-        if (auto status = quote.fromJSON(s.GetString()); !status.ok()) {
+        if (Status status = quote.fromJSON(s.GetString()); !status.ok()) {
             return status;
         }
     }

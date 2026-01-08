@@ -11,20 +11,20 @@ int main(int argc, char* argv[]) {
 
     std::string symbol = argv[1];
 
-    auto env = alpaca::markets::Environment();
-    if (auto status = env.parse(); !status.ok()) {
+    alpaca::markets::Environment env;
+    if (alpaca::markets::Status status = env.parse(); !status.ok()) {
         std::cerr << "Error parsing config from environment: " << status.getMessage() << std::endl;
         return status.getCode();
     }
-    auto client = alpaca::markets::Client(env);
+    alpaca::markets::Client client(env);
 
     // Get latest quote using Market Data API v2
-    auto quote_response = client.getLatestQuote(symbol);
-    if (auto status = quote_response.first; !status.ok()) {
+    std::pair<alpaca::markets::Status, alpaca::markets::LatestQuote> quote_response = client.getLatestQuote(symbol);
+    if (alpaca::markets::Status status = quote_response.first; !status.ok()) {
         std::cerr << "Error getting latest quote: " << status.getMessage() << std::endl;
         return status.getCode();
     }
-    auto latest_quote = quote_response.second;
+    alpaca::markets::LatestQuote latest_quote = quote_response.second;
 
     // Display quote information
     std::cout << "Latest quote for " << symbol << ":" << std::endl;
@@ -33,12 +33,12 @@ int main(int argc, char* argv[]) {
     std::cout << "  Timestamp: " << latest_quote.quote.timestamp << std::endl;
 
     // Also get latest trade
-    auto trade_response = client.getLatestTrade(symbol);
-    if (auto status = trade_response.first; !status.ok()) {
+    std::pair<alpaca::markets::Status, alpaca::markets::LatestTrade> trade_response = client.getLatestTrade(symbol);
+    if (alpaca::markets::Status status = trade_response.first; !status.ok()) {
         std::cerr << "Error getting latest trade: " << status.getMessage() << std::endl;
         return status.getCode();
     }
-    auto latest_trade = trade_response.second;
+    alpaca::markets::LatestTrade latest_trade = trade_response.second;
 
     std::cout << "Latest trade for " << symbol << ":" << std::endl;
     std::cout << "  Price: $" << latest_trade.trade.price << std::endl;

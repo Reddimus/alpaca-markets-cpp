@@ -32,7 +32,7 @@ TEST(OrderTest, FromJSON) {
     })";
 
     Order order;
-    auto status = order.fromJSON(json);
+    Status status = order.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(order.asset_class, "us_equity");
@@ -47,7 +47,7 @@ TEST(OrderTest, FromJSON) {
 
 TEST(OrderTest, FromJSONParseError) {
     Order order;
-    auto status = order.fromJSON("invalid json");
+    Status status = order.fromJSON("invalid json");
     
     EXPECT_FALSE(status.ok());
 }

@@ -28,8 +28,8 @@ inline const std::string kTradingStreamURLPaper = "wss://paper-api.alpaca.market
  * and the newer ALPACA_MARKETS_* variables for compatibility.
  *
  * @code{.cpp}
- *   auto env = alpaca::markets::Environment();
- *   if (auto status = env.parse(); !status.ok()) {
+ *   alpaca::markets::Environment env;
+ *   if (alpaca::markets::Status status = env.parse(); !status.ok()) {
  *     std::cerr << "Error parsing config from environment: "
  *               << status.getMessage() << std::endl;
  *     return status.getCode();

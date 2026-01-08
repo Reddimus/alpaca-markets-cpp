@@ -77,14 +77,14 @@ ALPACA_MARKETS_INDIVIDUAL_API_SECRET_KEY="your-live-secret"
 
 int main() {
     // Parse environment configuration
-    auto env = alpaca::markets::Environment();
-    if (auto status = env.parse(); !status.ok()) {
+    alpaca::markets::Environment env;
+    if (alpaca::markets::Status status = env.parse(); !status.ok()) {
         std::cerr << "Error: " << status.getMessage() << std::endl;
         return 1;
     }
 
     // Create client
-    auto client = alpaca::markets::Client(env);
+    alpaca::markets::Client client(env);
 
     // Get account information
     auto [status, account] = client.getAccount();

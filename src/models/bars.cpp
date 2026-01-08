@@ -53,7 +53,7 @@ Status Bars::fromJSON(const std::string& json) {
                     s.Clear();
                     rapidjson::Writer<rapidjson::StringBuffer> writer(s);
                     b.Accept(writer);
-                    if (auto status = bar.fromJSON(s.GetString()); !status.ok()) {
+                    if (Status status = bar.fromJSON(s.GetString()); !status.ok()) {
                         return status;
                     }
                     symbol_bars.push_back(bar);

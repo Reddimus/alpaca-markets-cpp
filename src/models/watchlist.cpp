@@ -32,7 +32,7 @@ Status Watchlist::fromJSON(const std::string& json) {
             s.Clear();
             rapidjson::Writer<rapidjson::StringBuffer> writer(s);
             a.Accept(writer);
-            if (auto status = asset.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = asset.fromJSON(s.GetString()); !status.ok()) {
                 return status;
             }
             assets.push_back(asset);

@@ -3,20 +3,20 @@
 #include <iostream>
 
 int main() {
-    auto env = alpaca::markets::Environment();
-    if (auto status = env.parse(); !status.ok()) {
+    alpaca::markets::Environment env;
+    if (alpaca::markets::Status status = env.parse(); !status.ok()) {
         std::cerr << "Error parsing config from environment: " << status.getMessage() << std::endl;
         return status.getCode();
     }
-    auto client = alpaca::markets::Client(env);
+    alpaca::markets::Client client(env);
 
     // Get our account information.
-    auto account_response = client.getAccount();
-    if (auto status = account_response.first; !status.ok()) {
+    std::pair<alpaca::markets::Status, alpaca::markets::Account> account_response = client.getAccount();
+    if (alpaca::markets::Status status = account_response.first; !status.ok()) {
         std::cerr << "Error getting account information: " << status.getMessage() << std::endl;
         return status.getCode();
     }
-    auto account = account_response.second;
+    alpaca::markets::Account account = account_response.second;
 
     // Check if our account is restricted from trading.
     if (account.trading_blocked) {

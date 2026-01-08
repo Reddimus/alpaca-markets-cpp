@@ -26,7 +26,7 @@ std::string actionStatusToString(ActionStatus status);
  *
  * @code{.cpp}
  *   alpaca::markets::Status foobar() {
- *     auto na = doSomeWork();
+ *     SomeType na = doSomeWork();
  *     if (na->itWorked()) {
  *       return alpaca::markets::Status(0, "OK");
  *     } else {
@@ -80,7 +80,7 @@ public:
      * @brief A convenience method to check if the return code is 0
      *
      * @code{.cpp}
-     *   auto s = doSomething();
+     *   alpaca::markets::Status s = doSomething();
      *   if (s.ok()) {
      *     LOG(INFO) << "doing work";
      *   } else {

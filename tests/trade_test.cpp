@@ -17,7 +17,7 @@ TEST(TradeTest, FromJSON) {
     })";
 
     Trade trade;
-    auto status = trade.fromJSON(json);
+    Status status = trade.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(trade.price, 150.50);
@@ -47,7 +47,7 @@ TEST(LatestTradeTest, FromJSON) {
     })";
 
     LatestTrade latest_trade;
-    auto status = latest_trade.fromJSON(json);
+    Status status = latest_trade.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(latest_trade.symbol, "AAPL");
@@ -57,6 +57,6 @@ TEST(LatestTradeTest, FromJSON) {
 
 TEST(TradeTest, FromJSONParseError) {
     Trade trade;
-    auto status = trade.fromJSON("invalid json");
+    Status status = trade.fromJSON("invalid json");
     EXPECT_FALSE(status.ok());
 }

@@ -6,7 +6,7 @@ using namespace alpaca::markets::stream;
 
 TEST(MessageGeneratorTest, Authentication) {
     MessageGenerator gen;
-    auto msg = gen.authentication("test-key-id", "test-secret-key");
+    std::string msg = gen.authentication("test-key-id", "test-secret-key");
     
     // Verify it's valid JSON containing expected fields
     EXPECT_NE(msg.find("authenticate"), std::string::npos);
@@ -17,7 +17,7 @@ TEST(MessageGeneratorTest, Authentication) {
 TEST(MessageGeneratorTest, Listen) {
     MessageGenerator gen;
     std::set<StreamType> streams = {StreamType::TradeUpdates, StreamType::AccountUpdates};
-    auto msg = gen.listen(streams);
+    std::string msg = gen.listen(streams);
     
     // Verify it's valid JSON containing expected fields
     EXPECT_NE(msg.find("listen"), std::string::npos);

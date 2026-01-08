@@ -18,7 +18,7 @@ TEST(QuoteTest, FromJSON) {
     })";
 
     Quote quote;
-    auto status = quote.fromJSON(json);
+    Status status = quote.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(quote.ask_price, 150.55);
@@ -49,7 +49,7 @@ TEST(LatestQuoteTest, FromJSON) {
     })";
 
     LatestQuote latest_quote;
-    auto status = latest_quote.fromJSON(json);
+    Status status = latest_quote.fromJSON(json);
     
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(latest_quote.symbol, "AAPL");
@@ -59,6 +59,6 @@ TEST(LatestQuoteTest, FromJSON) {
 
 TEST(QuoteTest, FromJSONParseError) {
     Quote quote;
-    auto status = quote.fromJSON("invalid json");
+    Status status = quote.fromJSON("invalid json");
     EXPECT_FALSE(status.ok());
 }

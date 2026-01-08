@@ -12,13 +12,13 @@
  * // #include <alpaca/markets/client.hpp>
  * 
  * int main() {
- *     auto env = alpaca::markets::Environment();
- *     if (auto status = env.parse(); !status.ok()) {
+ *     alpaca::markets::Environment env;
+ *     if (alpaca::markets::Status status = env.parse(); !status.ok()) {
  *         std::cerr << "Error: " << status.getMessage() << std::endl;
  *         return 1;
  *     }
  *     
- *     auto client = alpaca::markets::Client(env);
+ *     alpaca::markets::Client client(env);
  *     // Use client...
  * }
  * @endcode
