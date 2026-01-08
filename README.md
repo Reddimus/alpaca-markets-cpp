@@ -107,6 +107,49 @@ int main() {
 }
 ```
 
+## Architecture
+
+```mermaid
+graph TD
+    subgraph SDK["Alpaca Markets C++ SDK"]
+        Client["REST Client"]
+        Stream["Streaming (placeholder)"]
+        Models["Models / DTOs"]
+    end
+
+    subgraph Alpaca["Alpaca APIs"]
+        TradingAPI["Trading API v2"]
+        DataAPI["Market Data API v2"]
+        StreamAPI["WebSocket Stream"]
+    end
+
+    Client -->|HTTPS| TradingAPI
+    Client -->|HTTPS| DataAPI
+    Stream -.->|WSS| StreamAPI
+    Client --> Models
+    Stream --> Models
+```
+
+### REST Request Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Client as Client
+    participant HTTP as cpp-httplib
+    participant API as Alpaca API
+    participant Model as Model
+
+    App->>Client: getAccount()
+    Client->>HTTP: GET /v2/account
+    HTTP->>API: HTTPS request
+    API-->>HTTP: JSON response
+    HTTP-->>Client: response body
+    Client->>Model: parse JSON
+    Model-->>Client: Account object
+    Client-->>App: {Status, Account}
+```
+
 ## Project Structure
 
 ```text

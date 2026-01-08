@@ -2,32 +2,52 @@
 
 This directory contains the public headers for the Alpaca Markets C++ SDK.
 
+## Header Structure
+
+```mermaid
+graph TD
+    umbrella["markets.hpp<br/>(umbrella)"]
+    
+    subgraph rest["rest/"]
+        client["client.hpp"]
+        config["config.hpp"]
+    end
+    
+    subgraph models["models/"]
+        account["account.hpp"]
+        order["order.hpp"]
+        position["position.hpp"]
+        bars["bars.hpp"]
+        quote["quote.hpp"]
+        trade["trade.hpp"]
+        other["..."]
+    end
+    
+    subgraph stream["stream/"]
+        streaming["streaming.hpp"]
+    end
+    
+    umbrella --> client
+    umbrella --> config
+    umbrella --> streaming
+    umbrella --> account
+    umbrella --> order
+    umbrella --> position
+    umbrella --> bars
+    umbrella --> quote
+    umbrella --> trade
+```
+
 ## Directory Structure
 
-```
+```txt
 include/
 └── alpaca/
     └── markets/
-        ├── markets.hpp         # Umbrella header - includes everything
         ├── *.hpp               # Forwarding headers for backward compatibility
         ├── models/             # Data transfer objects (DTOs)
-        │   ├── status.hpp      # Status/error handling
-        │   ├── account.hpp     # Account models
-        │   ├── order.hpp       # Order models and enums
-        │   ├── position.hpp    # Position model
-        │   ├── asset.hpp       # Asset model
-        │   ├── clock.hpp       # Market clock model
-        │   ├── calendar.hpp    # Calendar model
-        │   ├── portfolio.hpp   # Portfolio history model
-        │   ├── watchlist.hpp   # Watchlist model
-        │   ├── bars.hpp        # OHLCV bar data (v2)
-        │   ├── quote.hpp       # Quote data (v2)
-        │   └── trade.hpp       # Trade data (v2)
         ├── rest/               # REST API components
-        │   ├── client.hpp      # REST API client
-        │   └── config.hpp      # Environment configuration
         └── stream/             # Streaming components
-            └── streaming.hpp   # WebSocket streaming (placeholder)
 ```
 
 ## Usage

@@ -2,30 +2,30 @@
 
 This directory contains the implementation files for the Alpaca Markets C++ SDK.
 
+## Module Dependencies
+
+```mermaid
+graph TD
+    rest["rest/"]
+    models["models/"]
+    stream["stream/"]
+    detail["detail/"]
+
+    rest --> models
+    rest --> detail
+    stream --> models
+    stream --> detail
+    models --> detail
+```
+
 ## Directory Structure
 
-```
+```txt
 src/
 ├── detail/              # Internal implementation details
-│   └── json.hpp         # JSON parsing macros using RapidJSON
 ├── models/              # Model implementations
-│   ├── status.cpp       # Status class and action status string conversions
-│   ├── account.cpp      # Account model JSON deserialization
-│   ├── order.cpp        # Order model and enum string conversions
-│   ├── position.cpp     # Position model JSON deserialization
-│   ├── asset.cpp        # Asset model JSON deserialization
-│   ├── clock.cpp        # Clock model JSON deserialization
-│   ├── calendar.cpp     # Calendar date model JSON deserialization
-│   ├── portfolio.cpp    # Portfolio history JSON deserialization
-│   ├── watchlist.cpp    # Watchlist model JSON deserialization
-│   ├── bars.cpp         # Bar data (OHLCV) JSON deserialization (v2 format)
-│   ├── quote.cpp        # Quote data JSON deserialization (v2 format)
-│   └── trade.cpp        # Trade data JSON deserialization (v2 format)
 ├── rest/                # REST API implementations
-│   ├── client.cpp       # REST API client implementation
-│   └── config.cpp       # Environment configuration parsing
 └── stream/              # Streaming implementations
-    └── streaming.cpp    # WebSocket streaming message handling
 ```
 
 ## Selective Builds

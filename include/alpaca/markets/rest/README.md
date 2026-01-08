@@ -2,12 +2,31 @@
 
 This directory contains the public headers for the REST API client of the Alpaca Markets C++ SDK.
 
+## Request Flow
+
+```mermaid
+sequenceDiagram
+    participant App as Application
+    participant Client as Client
+    participant HTTP as cpp-httplib
+    participant API as Alpaca API
+
+    App->>Client: client.getAccount()
+    Client->>Client: Build headers (auth)
+    Client->>HTTP: GET /v2/account
+    HTTP->>API: HTTPS request
+    API-->>HTTP: JSON response
+    HTTP-->>Client: Response body
+    Client->>Client: Parse JSON → Model
+    Client-->>App: {Status, Account}
+```
+
 ## Headers
 
-| File | Description |
-|------|-------------|
-| `client.hpp` | REST API client class declaration |
-| `config.hpp` | Environment configuration (API keys, URLs, env var parsing) |
+| File       | Description                                                         |
+| ---------- | ------------------------------------------------------------------- |
+| client.hpp | REST API client class declaration                                   |
+| config.hpp | Environment configuration (API keys, URLs, env var parsing)         |
 
 ## Usage
 
@@ -42,7 +61,7 @@ int main() {
     if (alpaca::markets::Status status = env.parse(); !status.ok()) {
         return 1;
     }
-    
+
     alpaca::markets::Client client(env);
     auto [status, account] = client.getAccount();
     // ...
@@ -61,9 +80,9 @@ make rest
 
 ## Make Targets
 
-| Target | Description |
-|--------|-------------|
-| `build` | Build the REST module |
-| `clean` | Clean the build directory |
-| `lint` | Lint REST header files |
-| `help` | Show available targets |
+| Target | Description               |
+| ------ | ------------------------- |
+| build  | Build the REST module     |
+| clean  | Clean the build directory |
+| lint   | Lint REST header files    |
+| help   | Show available targets    |
