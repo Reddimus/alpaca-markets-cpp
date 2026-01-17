@@ -25,16 +25,21 @@
  */
 
 #include <alpaca/markets/account.hpp>
+#include <alpaca/markets/announcement.hpp>
 #include <alpaca/markets/asset.hpp>
 #include <alpaca/markets/bars.hpp>
 #include <alpaca/markets/calendar.hpp>
 #include <alpaca/markets/client.hpp>
 #include <alpaca/markets/clock.hpp>
 #include <alpaca/markets/config.hpp>
+#include <alpaca/markets/crypto.hpp>
+#include <alpaca/markets/news.hpp>
+#include <alpaca/markets/option.hpp>
 #include <alpaca/markets/order.hpp>
 #include <alpaca/markets/portfolio.hpp>
 #include <alpaca/markets/position.hpp>
 #include <alpaca/markets/quote.hpp>
+#include <alpaca/markets/snapshot.hpp>
 #include <alpaca/markets/status.hpp>
 #include <alpaca/markets/streaming.hpp>
 #include <alpaca/markets/trade.hpp>

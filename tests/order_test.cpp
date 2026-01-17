@@ -83,4 +83,59 @@ TEST(OrderClassTest, ToStringConversion) {
     EXPECT_EQ(orderClassToString(OrderClass::Bracket), "bracket");
     EXPECT_EQ(orderClassToString(OrderClass::OneCancelsOther), "oco");
     EXPECT_EQ(orderClassToString(OrderClass::OneTriggersOther), "oto");
+    EXPECT_EQ(orderClassToString(OrderClass::MultiLeg), "mleg");
+}
+
+TEST(OrderTypeTest, TrailingStopConversion) {
+    EXPECT_EQ(orderTypeToString(OrderType::TrailingStop), "trailing_stop");
+}
+
+TEST(PositionIntentTest, ToStringConversion) {
+    EXPECT_EQ(positionIntentToString(PositionIntent::BuyToOpen), "buy_to_open");
+    EXPECT_EQ(positionIntentToString(PositionIntent::BuyToClose), "buy_to_close");
+    EXPECT_EQ(positionIntentToString(PositionIntent::SellToOpen), "sell_to_open");
+    EXPECT_EQ(positionIntentToString(PositionIntent::SellToClose), "sell_to_close");
+}
+
+TEST(OrderTest, FromJSONWithTrailingStop) {
+    const std::string json = R"({
+        "asset_class": "us_equity",
+        "asset_id": "asset-123",
+        "id": "order-789",
+        "symbol": "AAPL",
+        "qty": "10",
+        "side": "sell",
+        "type": "trailing_stop",
+        "trail_price": "5.00",
+        "trail_percent": null,
+        "hwm": "155.00",
+        "status": "new"
+    })";
+
+    Order order;
+    Status status = order.fromJSON(json);
+    
+    EXPECT_TRUE(status.ok());
+    EXPECT_EQ(order.type, "trailing_stop");
+    EXPECT_EQ(order.trail_price, "5.00");
+    EXPECT_EQ(order.hwm, "155.00");
+}
+
+TEST(OrderTest, FromJSONWithNotional) {
+    const std::string json = R"({
+        "asset_class": "us_equity",
+        "asset_id": "asset-123",
+        "id": "order-789",
+        "symbol": "AAPL",
+        "notional": "1000.00",
+        "side": "buy",
+        "type": "market",
+        "status": "new"
+    })";
+
+    Order order;
+    Status status = order.fromJSON(json);
+    
+    EXPECT_TRUE(status.ok());
+    EXPECT_EQ(order.notional, "1000.00");
 }

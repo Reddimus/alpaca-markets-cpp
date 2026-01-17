@@ -47,3 +47,28 @@ TEST(ActionStatusTest, ToStringConversion) {
     EXPECT_EQ(actionStatusToString(ActionStatus::Active), "active");
     EXPECT_EQ(actionStatusToString(ActionStatus::All), "all");
 }
+
+TEST(APIErrorTest, BasicError) {
+    APIError err(422, 40010000, "insufficient qty available for order");
+    
+    EXPECT_EQ(err.getHTTPStatusCode(), 422);
+    EXPECT_EQ(err.getAPICode(), 40010000);
+    EXPECT_EQ(err.getMessage(), "insufficient qty available for order");
+    EXPECT_EQ(err.what(), "insufficient qty available for order (HTTP 422, Code 40010000)");
+}
+
+TEST(APIErrorTest, ErrorWithoutCode) {
+    APIError err(403, 0, "forbidden");
+    
+    EXPECT_EQ(err.getHTTPStatusCode(), 403);
+    EXPECT_EQ(err.getAPICode(), 0);
+    EXPECT_EQ(err.what(), "forbidden (HTTP 403)");
+}
+
+TEST(APIErrorTest, ToStatus) {
+    APIError err(400, 40010001, "Bad request");
+    Status status = err.toStatus();
+    
+    EXPECT_FALSE(status.ok());
+    EXPECT_EQ(status.getMessage(), "Bad request (HTTP 400, Code 40010001)");
+}
