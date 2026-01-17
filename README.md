@@ -33,6 +33,102 @@ make build
 make test
 ```
 
+### Installing & Using in Another CMake Project
+
+There are **three main ways** to use this library in your project:
+
+#### Option 1: FetchContent (Recommended for most projects)
+
+The easiest way to use `alpaca-markets-cpp` is with CMake's `FetchContent` module:
+
+```cmake
+cmake_minimum_required(VERSION 3.25)
+project(my_trading_app)
+
+set(CMAKE_CXX_STANDARD 20)
+
+include(FetchContent)
+FetchContent_Declare(
+    alpaca_markets
+    GIT_REPOSITORY https://github.com/your-org/alpaca-markets-cpp.git
+    GIT_TAG        main  # or a specific tag like v1.0.0
+)
+FetchContent_MakeAvailable(alpaca_markets)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE alpaca::markets)
+```
+
+When used via FetchContent:
+
+- Tests and examples are automatically disabled for the dependency
+- Dependencies (RapidJSON, cpp-httplib) are fetched automatically
+- No system installation required
+
+#### Option 2: System Installation with find_package()
+
+Install the library to your system or a custom prefix:
+
+```bash
+# Configure and build
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+
+# Build
+cmake --build build --config Release
+
+# Install (to system or custom prefix)
+cmake --install build --prefix /usr/local  # or ~/.local, /opt/alpaca, etc.
+```
+
+Then use in your project:
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(my_trading_app)
+
+set(CMAKE_CXX_STANDARD 20)
+
+# Find the installed package
+find_package(alpaca_markets REQUIRED)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE alpaca::markets)
+```
+
+If installed to a non-standard prefix, add it to `CMAKE_PREFIX_PATH`:
+
+```bash
+cmake -B build -DCMAKE_PREFIX_PATH=/opt/alpaca
+```
+
+#### Option 3: Add as Git Submodule
+
+```bash
+git submodule add https://github.com/your-org/alpaca-markets-cpp.git external/alpaca-markets-cpp
+```
+
+```cmake
+add_subdirectory(external/alpaca-markets-cpp)
+
+add_executable(my_app main.cpp)
+target_link_libraries(my_app PRIVATE alpaca::markets)
+```
+
+### System Dependencies
+
+The library requires these system dependencies:
+
+| Dependency        | Purpose            | Install (Ubuntu/Debian)         |
+|-------------------|--------------------|---------------------------------|
+| OpenSSL           | HTTPS support      | `apt install libssl-dev`        |
+| ZLIB              | Compression        | `apt install zlib1g-dev`        |
+| Brotli (optional) | Brotli compression | `apt install libbrotli-dev`     |
+
+#### Dependency Options
+
+- `ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON=ON` to use a system RapidJSON package.
+- `ALPACA_MARKETS_USE_SYSTEM_HTTPLIB=ON` to use a system cpp-httplib package.
+
 ### Environment Variables
 
 Set the following environment variables before running:
@@ -335,27 +431,27 @@ while (status.ok() && !result.second.empty()) {
 
 This C++ SDK aims to provide feature parity with Alpaca's official SDKs:
 
-| Feature                       | Status |
-|-------------------------------|--------|
-| Trading API v2                | ✅      |
-| Market Data API v2            | ✅      |
-| Options Contracts API         | ✅      |
-| Market Snapshots              | ✅      |
-| Historical Trades/Quotes      | ✅      |
-| Multi-Symbol Historical Data  | ✅      |
-| Auctions Data                 | ✅      |
-| Market Data Corporate Actions | ✅      |
-| Trailing Stop Orders          | ✅      |
-| Notional (Dollar) Orders      | ✅      |
-| Multi-Symbol Quotes/Trades    | ✅      |
-| Corporate Actions (Trading)   | ✅      |
-| Crypto Asset Class            | ✅      |
-| Typed API Errors              | ✅      |
-| Crypto Market Data            | ✅      |
-| News API                      | ✅      |
-| Retry/Backoff Configuration   | ✅      |
-| Timeout Configuration         | ✅      |
-| Pagination Helpers            | ✅      |
+| Feature                       | Status         |
+|-------------------------------|----------------|
+| Trading API v2                | ✅             |
+| Market Data API v2            | ✅             |
+| Options Contracts API         | ✅             |
+| Market Snapshots              | ✅             |
+| Historical Trades/Quotes      | ✅             |
+| Multi-Symbol Historical Data  | ✅             |
+| Auctions Data                 | ✅             |
+| Market Data Corporate Actions | ✅             |
+| Trailing Stop Orders          | ✅             |
+| Notional (Dollar) Orders      | ✅             |
+| Multi-Symbol Quotes/Trades    | ✅             |
+| Corporate Actions (Trading)   | ✅             |
+| Crypto Asset Class            | ✅             |
+| Typed API Errors              | ✅             |
+| Crypto Market Data            | ✅             |
+| News API                      | ✅             |
+| Retry/Backoff Configuration   | ✅             |
+| Timeout Configuration         | ✅             |
+| Pagination Helpers            | ✅             |
 | WebSocket Streaming           | 🔄 Placeholder |
 
 ## License

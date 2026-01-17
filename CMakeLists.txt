@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(alpaca_markets VERSION 1.0.0 LANGUAGES CXX)
+project(alpaca_markets VERSION 0.0.1 LANGUAGES CXX)
 
 # C++20 standard (widely supported; update to C++23/26 when compilers support it)
 set(CMAKE_CXX_STANDARD 20)
@@ -17,34 +17,62 @@ elseif(MSVC)
 endif()
 
 # Options
-option(ALPACA_MARKETS_BUILD_TESTS "Build tests" ON)
-option(ALPACA_MARKETS_BUILD_EXAMPLES "Build examples" ON)
+set(ALPACA_MARKETS_BUILD_TESTS_DEFAULT ON)
+set(ALPACA_MARKETS_BUILD_EXAMPLES_DEFAULT ON)
+if(NOT PROJECT_IS_TOP_LEVEL)
+    set(ALPACA_MARKETS_BUILD_TESTS_DEFAULT OFF)
+    set(ALPACA_MARKETS_BUILD_EXAMPLES_DEFAULT OFF)
+endif()
 
-# Dependencies via FetchContent
+option(ALPACA_MARKETS_BUILD_TESTS "Build tests" ${ALPACA_MARKETS_BUILD_TESTS_DEFAULT})
+option(ALPACA_MARKETS_BUILD_EXAMPLES "Build examples" ${ALPACA_MARKETS_BUILD_EXAMPLES_DEFAULT})
+option(ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON "Use system RapidJSON instead of FetchContent" OFF)
+option(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB "Use system cpp-httplib instead of FetchContent" OFF)
+
+# Dependencies
 include(FetchContent)
 
-# RapidJSON (header-only, only need to populate)
-FetchContent_Declare(
-    rapidjson
-    GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
-    GIT_TAG v1.1.0
-)
-FetchContent_GetProperties(rapidjson)
-if(NOT rapidjson_POPULATED)
-    FetchContent_Populate(rapidjson)
-    # Don't add_subdirectory - rapidjson is header-only and its CMakeLists brings in gtest
+# RapidJSON (header-only)
+if(ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON)
+    find_package(RapidJSON REQUIRED)
+    set(alpaca_markets_rapidjson_include_dirs ${RapidJSON_INCLUDE_DIRS})
+else()
+    FetchContent_Declare(
+        rapidjson
+        GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
+        GIT_TAG v1.1.0
+    )
+    FetchContent_GetProperties(rapidjson)
+    if(NOT rapidjson_POPULATED)
+        FetchContent_Populate(rapidjson)
+        # Don't add_subdirectory - rapidjson is header-only and its CMakeLists brings in gtest
+    endif()
+    set(alpaca_markets_rapidjson_include_dirs ${rapidjson_SOURCE_DIR}/include)
 endif()
 
 # cpp-httplib (header-only)
-FetchContent_Declare(
-    httplib
-    GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-    GIT_TAG v0.14.3
-)
-FetchContent_MakeAvailable(httplib)
+if(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB)
+    find_package(httplib REQUIRED)
+else()
+    FetchContent_Declare(
+        httplib
+        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+        GIT_TAG v0.14.3
+    )
+    FetchContent_MakeAvailable(httplib)
+endif()
 
 # Find OpenSSL for HTTPS support
 find_package(OpenSSL REQUIRED)
+
+# Find ZLIB for compression support (used by cpp-httplib)
+find_package(ZLIB REQUIRED)
+
+# Find Brotli for compression support (optional, used by cpp-httplib)
+find_package(PkgConfig)
+if(PkgConfig_FOUND)
+    pkg_check_modules(BROTLI IMPORTED_TARGET libbrotlidec libbrotlienc)
+endif()
 
 # ============================================================================
 # Module targets (for selective builds)
@@ -58,7 +86,7 @@ target_include_directories(alpaca_markets_models PUBLIC
 )
 # Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
 target_include_directories(alpaca_markets_models SYSTEM PRIVATE
-    ${rapidjson_SOURCE_DIR}/include
+    ${alpaca_markets_rapidjson_include_dirs}
 )
 
 # REST module
@@ -69,10 +97,10 @@ target_include_directories(alpaca_markets_rest PUBLIC
 )
 # Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
 target_include_directories(alpaca_markets_rest SYSTEM PRIVATE
-    ${rapidjson_SOURCE_DIR}/include
+    ${alpaca_markets_rapidjson_include_dirs}
 )
-target_link_libraries(alpaca_markets_rest PUBLIC httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
-target_compile_definitions(alpaca_markets_rest PUBLIC CPPHTTPLIB_OPENSSL_SUPPORT)
+target_link_libraries(alpaca_markets_rest PRIVATE httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
+target_compile_definitions(alpaca_markets_rest PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # Stream module
 file(GLOB ALPACA_STREAM_SOURCES "src/stream/*.cpp")
@@ -82,7 +110,7 @@ target_include_directories(alpaca_markets_stream PUBLIC
 )
 # Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
 target_include_directories(alpaca_markets_stream SYSTEM PRIVATE
-    ${rapidjson_SOURCE_DIR}/include
+    ${alpaca_markets_rapidjson_include_dirs}
 )
 
 # ============================================================================
@@ -100,24 +128,36 @@ target_include_directories(alpaca_markets PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
+target_compile_features(alpaca_markets PUBLIC cxx_std_20)
+
 # RapidJSON include directory (SYSTEM to suppress third-party warnings)
 target_include_directories(alpaca_markets SYSTEM PRIVATE
-    ${rapidjson_SOURCE_DIR}/include
+    ${alpaca_markets_rapidjson_include_dirs}
 )
 
 # Link dependencies
 target_link_libraries(alpaca_markets
     PUBLIC
-        httplib::httplib
         OpenSSL::SSL
         OpenSSL::Crypto
+        ZLIB::ZLIB
 )
 
+# Optional Brotli support - use library names for export compatibility
+if(BROTLI_FOUND)
+    # Link directly to library files instead of PkgConfig target for export compatibility
+    target_link_libraries(alpaca_markets PUBLIC ${BROTLI_LIBRARIES})
+    target_include_directories(alpaca_markets SYSTEM PUBLIC ${BROTLI_INCLUDE_DIRS})
+    target_compile_definitions(alpaca_markets PRIVATE CPPHTTPLIB_BROTLI_SUPPORT)
+    set(ALPACA_MARKETS_BROTLI_ENABLED TRUE CACHE INTERNAL "Brotli support enabled")
+endif()
+
 # Enable OpenSSL support in cpp-httplib
-target_compile_definitions(alpaca_markets PUBLIC CPPHTTPLIB_OPENSSL_SUPPORT)
+target_compile_definitions(alpaca_markets PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # Create alias for namespaced usage
 add_library(alpaca::markets ALIAS alpaca_markets)
+set_target_properties(alpaca_markets PROPERTIES EXPORT_NAME markets)
 
 # Tests
 if(ALPACA_MARKETS_BUILD_TESTS)
@@ -154,12 +194,33 @@ endif()
 
 # Installation
 include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+set(alpaca_markets_INSTALL_CMAKEDIR "${CMAKE_INSTALL_LIBDIR}/cmake/alpaca_markets")
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/alpaca_markets-config.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/alpaca_markets-config.cmake"
+    INSTALL_DESTINATION "${alpaca_markets_INSTALL_CMAKEDIR}"
+)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/alpaca_markets-config-version.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion
+)
 
 install(TARGETS alpaca_markets
     EXPORT alpaca_markets_targets
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+export(EXPORT alpaca_markets_targets
+    FILE "${CMAKE_CURRENT_BINARY_DIR}/alpaca_markets-targets.cmake"
+    NAMESPACE alpaca::
 )
 
 install(DIRECTORY include/alpaca
@@ -169,5 +230,11 @@ install(DIRECTORY include/alpaca
 install(EXPORT alpaca_markets_targets
     FILE alpaca_markets-targets.cmake
     NAMESPACE alpaca::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/alpaca_markets
+    DESTINATION ${alpaca_markets_INSTALL_CMAKEDIR}
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/alpaca_markets-config.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/alpaca_markets-config-version.cmake"
+    DESTINATION ${alpaca_markets_INSTALL_CMAKEDIR}
 )
