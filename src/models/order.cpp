@@ -36,6 +36,8 @@ std::string orderTypeToString(OrderType type) {
             return "stop";
         case OrderType::StopLimit:
             return "stop_limit";
+        case OrderType::TrailingStop:
+            return "trailing_stop";
         default:
             return "market";
     }
@@ -70,8 +72,25 @@ std::string orderClassToString(OrderClass order_class) {
             return "oco";
         case OrderClass::OneTriggersOther:
             return "oto";
+        case OrderClass::MultiLeg:
+            return "mleg";
         default:
             return "simple";
+    }
+}
+
+std::string positionIntentToString(PositionIntent intent) {
+    switch (intent) {
+        case PositionIntent::BuyToOpen:
+            return "buy_to_open";
+        case PositionIntent::BuyToClose:
+            return "buy_to_close";
+        case PositionIntent::SellToOpen:
+            return "sell_to_open";
+        case PositionIntent::SellToClose:
+            return "sell_to_close";
+        default:
+            return "buy_to_open";
     }
 }
 
@@ -100,9 +119,13 @@ Status Order::fromJSON(const std::string& json) {
     PARSE_BOOL(legs, "legs")
     PARSE_STRING(limit_price, "limit_price")
     PARSE_STRING(qty, "qty")
+    PARSE_STRING(notional, "notional")
     PARSE_STRING(side, "side")
     PARSE_STRING(status, "status")
     PARSE_STRING(stop_price, "stop_price")
+    PARSE_STRING(trail_price, "trail_price")
+    PARSE_STRING(trail_percent, "trail_percent")
+    PARSE_STRING(hwm, "hwm")
     PARSE_STRING(submitted_at, "submitted_at")
     PARSE_STRING(symbol, "symbol")
     PARSE_STRING(time_in_force, "time_in_force")

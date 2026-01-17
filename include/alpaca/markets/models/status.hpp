@@ -135,4 +135,69 @@ private:
     std::string message_;
 };
 
+/**
+ * @brief API Error from Alpaca REST API responses.
+ *
+ * This class wraps the detailed error code and message supplied
+ * by Alpaca's API for debugging purposes. Similar to the Go SDK's APIError.
+ *
+ * @code{.cpp}
+ *   alpaca::markets::APIError err(422, 40010000, "insufficient qty available for order");
+ *   std::cerr << err.what() << std::endl;
+ *   // Output: insufficient qty available for order (HTTP 422, Code 40010000)
+ * @endcode
+ */
+class APIError {
+public:
+    /**
+     * @brief Construct an API error from HTTP response details
+     *
+     * @param http_status_code The HTTP status code from the response
+     * @param api_code The Alpaca-specific error code from JSON body
+     * @param message The error message from JSON body
+     * @param body The raw response body (optional)
+     */
+    APIError(int http_status_code, int api_code, std::string message, std::string body = "")
+        : http_status_code_(http_status_code),
+          api_code_(api_code),
+          message_(std::move(message)),
+          body_(std::move(body)) {}
+
+    /**
+     * @brief Get the HTTP status code
+     */
+    [[nodiscard]] int getHTTPStatusCode() const { return http_status_code_; }
+
+    /**
+     * @brief Get the Alpaca API error code
+     */
+    [[nodiscard]] int getAPICode() const { return api_code_; }
+
+    /**
+     * @brief Get the error message
+     */
+    [[nodiscard]] const std::string& getMessage() const { return message_; }
+
+    /**
+     * @brief Get the raw response body
+     */
+    [[nodiscard]] const std::string& getBody() const { return body_; }
+
+    /**
+     * @brief Get formatted error string similar to Go SDK
+     */
+    [[nodiscard]] std::string what() const;
+
+    /**
+     * @brief Convert to Status for compatibility
+     */
+    [[nodiscard]] Status toStatus() const { return Status(1, what()); }
+
+private:
+    int http_status_code_;
+    int api_code_;
+    std::string message_;
+    std::string body_;
+};
+
 }  // namespace alpaca::markets

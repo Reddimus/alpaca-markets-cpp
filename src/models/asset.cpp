@@ -8,6 +8,8 @@ std::string assetClassToString(AssetClass asset_class) {
     switch (asset_class) {
         case AssetClass::USEquity:
             return "us_equity";
+        case AssetClass::Crypto:
+            return "crypto";
         default:
             return "us_equity";
     }
@@ -32,6 +34,9 @@ Status Asset::fromJSON(const std::string& json) {
     PARSE_STRING(status, "status")
     PARSE_STRING(symbol, "symbol")
     PARSE_BOOL(tradable, "tradable")
+    PARSE_BOOL(fractionable, "fractionable")
+    PARSE_STRING(name, "name")
+    PARSE_UINT(maintenance_margin_requirement, "maintenance_margin_requirement")
 
     return Status();
 }

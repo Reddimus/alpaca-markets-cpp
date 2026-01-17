@@ -13,7 +13,8 @@ Displays account information including buying power, cash, and equity.
 ```
 
 Output:
-```
+
+```text
 Account ID: abc123
 Account Status: ACTIVE
 Buying Power: $100000.00
@@ -31,7 +32,8 @@ Shows whether the market is currently open and the next open/close times.
 ```
 
 Output:
-```
+
+```text
 Market is currently CLOSED
 Current timestamp: 2024-01-15T18:30:00Z
 Next open: 2024-01-16T09:30:00-05:00
@@ -47,7 +49,8 @@ Fetches the latest quote and trade for a given symbol using Market Data API v2.
 ```
 
 Output:
-```
+
+```text
 Latest quote for AAPL:
   Bid: $185.50 x 300
   Ask: $185.55 x 200

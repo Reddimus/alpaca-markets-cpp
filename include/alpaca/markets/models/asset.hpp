@@ -11,6 +11,7 @@ namespace alpaca::markets {
  */
 enum class AssetClass {
     USEquity,
+    Crypto,
 };
 
 /**
@@ -42,6 +43,9 @@ public:
     std::string status;
     std::string symbol;
     bool tradable = false;
+    bool fractionable = false;
+    std::string name;
+    unsigned int maintenance_margin_requirement = 0;
 };
 
 }  // namespace alpaca::markets

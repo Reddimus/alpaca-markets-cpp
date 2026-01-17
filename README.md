@@ -184,10 +184,15 @@ alpaca-markets-cpp/
 
 - `getOrders()` - List orders
 - `getOrder()` - Get specific order
-- `submitOrder()` - Submit new order
+- `submitOrder()` - Submit new order (supports trailing stop with `trail_price`/`trail_percent`)
+- `submitNotionalOrder()` - Submit order by dollar amount (fractional shares)
 - `replaceOrder()` - Replace existing order
 - `cancelOrder()` - Cancel order
 - `cancelOrders()` - Cancel all orders
+
+**Order Types:** Market, Limit, Stop, StopLimit, TrailingStop
+
+**Order Classes:** Simple, Bracket, OneCancelsOther, OneTriggersOther, MultiLeg
 
 #### Positions
 
@@ -198,7 +203,7 @@ alpaca-markets-cpp/
 
 #### Assets
 
-- `getAssets()` - List assets
+- `getAssets()` - List assets (supports `USEquity` and `Crypto` asset classes)
 - `getAsset()` - Get asset details
 
 #### Market Data (v2)
@@ -206,6 +211,41 @@ alpaca-markets-cpp/
 - `getBars()` - Get historical bar data
 - `getLatestTrade()` - Get latest trade for symbol
 - `getLatestQuote()` - Get latest quote for symbol
+- `getLatestTrades()` - Get latest trades for multiple symbols
+- `getLatestQuotes()` - Get latest quotes for multiple symbols
+- `getLatestBar()` - Get latest bar for symbol
+- `getLatestBars()` - Get latest bars for multiple symbols
+- `getSnapshot()` - Get market snapshot (trade, quote, bars) for symbol
+- `getSnapshots()` - Get market snapshots for multiple symbols
+- `getTrades()` - Get historical trades with pagination
+- `getQuotes()` - Get historical quotes with pagination
+- `getMultiTrades()` - Get historical trades for multiple symbols with pagination
+- `getMultiQuotes()` - Get historical quotes for multiple symbols with pagination
+- `getAuctions()` - Get auction data (opening/closing) for a symbol
+- `getMultiAuctions()` - Get auction data for multiple symbols
+
+#### Market Data Corporate Actions
+
+- `getCorporateActions()` - Get corporate actions (splits, dividends, mergers, name changes, etc.)
+
+#### News
+
+- `getNews()` - Get news articles with symbol filtering and pagination
+
+#### Crypto Market Data
+
+- `getLatestCryptoTrade()` / `getLatestCryptoTrades()` - Latest crypto trades
+- `getLatestCryptoQuote()` / `getLatestCryptoQuotes()` - Latest crypto quotes
+- `getLatestCryptoBar()` / `getLatestCryptoBars()` - Latest crypto bars
+- `getCryptoSnapshot()` / `getCryptoSnapshots()` - Crypto market snapshots
+- `getCryptoBars()` - Historical crypto bars
+- `getCryptoTrades()` - Historical crypto trades
+- `getCryptoQuotes()` - Historical crypto quotes
+
+#### Options
+
+- `getOptionContracts()` - List option contracts with filters
+- `getOptionContract()` - Get specific option contract by symbol or ID
 
 #### Watchlists
 
@@ -215,10 +255,71 @@ alpaca-markets-cpp/
 - `updateWatchlist()` - Update watchlist
 - `deleteWatchlist()` - Delete watchlist
 
+#### Corporate Actions (Trading API)
+
+- `getAnnouncements()` - Get corporate action announcements (dividends, splits, mergers, spinoffs)
+- `getAnnouncement()` - Get specific announcement by ID
+
 #### Clock & Calendar
 
 - `getClock()` - Get market clock
 - `getCalendar()` - Get market calendar
+
+### Error Handling
+
+The SDK provides typed API errors similar to official SDKs:
+
+```cpp
+// APIError provides detailed error information from the Alpaca API
+alpaca::markets::APIError err(422, 40010000, "insufficient qty available for order");
+std::cerr << err.what() << std::endl;
+// Output: insufficient qty available for order (HTTP 422, Code 40010000)
+
+// Convert to Status for uniform error handling
+alpaca::markets::Status status = err.toStatus();
+```
+
+### Retry & Timeout Configuration
+
+Configure request resiliency with retry and timeout settings:
+
+```cpp
+alpaca::markets::Environment env;
+env.parse();
+
+// Configure retries with exponential backoff
+alpaca::markets::RetryConfig retry;
+retry.max_retries = 5;
+retry.initial_delay = std::chrono::milliseconds{100};
+retry.max_delay = std::chrono::milliseconds{5000};
+retry.backoff_multiplier = 2.0;
+env.setRetryConfig(retry);
+
+// Configure timeouts
+alpaca::markets::TimeoutConfig timeout;
+timeout.connection_timeout = std::chrono::seconds{30};
+timeout.read_timeout = std::chrono::seconds{60};
+env.setTimeoutConfig(timeout);
+```
+
+### Pagination Helpers
+
+Use `PageIterator` for convenient iteration over paginated results:
+
+```cpp
+#include <alpaca/markets/pagination.hpp>
+
+// Manually iterate through pages
+auto [status, result] = client.getTrades("AAPL", start, end, 100);
+while (status.ok() && !result.second.empty()) {
+    for (const auto& trade : result.first) {
+        process(trade);
+    }
+    auto [s, r] = client.getTrades("AAPL", start, end, 100, result.second);
+    status = s;
+    result = r;
+}
+```
 
 ## Make Targets
 
@@ -229,6 +330,33 @@ alpaca-markets-cpp/
 | `make lint`  | Run linting (requires clang-format, clang-tidy)  |
 | `make clean` | Remove build directory                           |
 | `make help`  | Show available targets                           |
+
+## Feature Parity with Official SDKs
+
+This C++ SDK aims to provide feature parity with Alpaca's official SDKs:
+
+| Feature                       | Status |
+|-------------------------------|--------|
+| Trading API v2                | ✅      |
+| Market Data API v2            | ✅      |
+| Options Contracts API         | ✅      |
+| Market Snapshots              | ✅      |
+| Historical Trades/Quotes      | ✅      |
+| Multi-Symbol Historical Data  | ✅      |
+| Auctions Data                 | ✅      |
+| Market Data Corporate Actions | ✅      |
+| Trailing Stop Orders          | ✅      |
+| Notional (Dollar) Orders      | ✅      |
+| Multi-Symbol Quotes/Trades    | ✅      |
+| Corporate Actions (Trading)   | ✅      |
+| Crypto Asset Class            | ✅      |
+| Typed API Errors              | ✅      |
+| Crypto Market Data            | ✅      |
+| News API                      | ✅      |
+| Retry/Backoff Configuration   | ✅      |
+| Timeout Configuration         | ✅      |
+| Pagination Helpers            | ✅      |
+| WebSocket Streaming           | 🔄 Placeholder |
 
 ## License
 

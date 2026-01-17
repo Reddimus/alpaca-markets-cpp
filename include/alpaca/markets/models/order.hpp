@@ -43,6 +43,7 @@ enum class OrderType {
     Limit,
     Stop,
     StopLimit,
+    TrailingStop,
 };
 
 /**
@@ -81,12 +82,28 @@ enum class OrderClass {
     Bracket,
     OneCancelsOther,
     OneTriggersOther,
+    MultiLeg,
 };
 
 /**
  * @brief A helper to convert an OrderClass to a string
  */
 std::string orderClassToString(OrderClass order_class);
+
+/**
+ * @brief Position intent for options orders
+ */
+enum class PositionIntent {
+    BuyToOpen,
+    BuyToClose,
+    SellToOpen,
+    SellToClose,
+};
+
+/**
+ * @brief A helper to convert a PositionIntent to a string
+ */
+std::string positionIntentToString(PositionIntent intent);
 
 /**
  * @brief Additional parameters for take-profit leg of advanced orders
@@ -136,9 +153,13 @@ public:
     bool legs = false;
     std::string limit_price;
     std::string qty;
+    std::string notional;  // For dollar-based/notional orders
     std::string side;
     std::string status;
     std::string stop_price;
+    std::string trail_price;     // For trailing stop orders
+    std::string trail_percent;   // For trailing stop orders
+    std::string hwm;             // High water mark for trailing stops
     std::string submitted_at;
     std::string symbol;
     std::string time_in_force;
