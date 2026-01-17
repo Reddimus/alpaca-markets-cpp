@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(alpaca_markets VERSION 1.0.0 LANGUAGES CXX)
+project(alpaca_markets VERSION 0.0.1 LANGUAGES CXX)
 
 # C++20 standard (widely supported; update to C++23/26 when compilers support it)
 set(CMAKE_CXX_STANDARD 20)
