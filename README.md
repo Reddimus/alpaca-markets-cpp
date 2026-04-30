@@ -1,5 +1,10 @@
 # Alpaca Markets C++ SDK
 
+[![CI](https://github.com/Reddimus/alpaca-markets-cpp/actions/workflows/ci.yml/badge.svg)](https://github.com/Reddimus/alpaca-markets-cpp/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/Reddimus/alpaca-markets-cpp)](https://github.com/Reddimus/alpaca-markets-cpp/releases)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](https://en.cppreference.com/w/cpp/20)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A modern C++ SDK for the [Alpaca](https://alpaca.markets/) Trading and Market Data APIs.
 
 ## Features
