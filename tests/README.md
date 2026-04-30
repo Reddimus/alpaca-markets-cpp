@@ -44,6 +44,7 @@ Tests use Google Test (gtest), which is automatically fetched via CMake FetchCon
 Integration tests (requiring real API credentials) are not included in the default test suite. To test against the live API:
 
 1. Set environment variables (see root `README.md` for all supported names):
+
    ```bash
    export APCA_API_KEY_ID="your-key"
    export APCA_API_SECRET_KEY="your-secret"
@@ -53,6 +54,7 @@ Integration tests (requiring real API credentials) are not included in the defau
    ```
 
 2. Run the example applications:
+
    ```bash
    ./build/examples/view_account_info
    ./build/examples/check_market_status
