@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        # rapidjson-dev / httplib aren't always packaged; the CMake
+        # config FetchContent's them when not found, so apt only needs
+        # the truly mandatory deps (openssl + zlib + brotli).
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config clang-format \
+            libssl-dev zlib1g-dev libbrotli-dev rapidjson-dev
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+      - name: Lint
+        run: make lint
+
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        # Lint runs only on Linux so we don't need clang-format from brew —
+        # brew tracks the latest LLVM, and clang-format formatting output
+        # changes between versions.
+        run: |
+          brew install pkg-config openssl zlib brotli rapidjson cpp-httplib
+          echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl);$(brew --prefix zlib);$(brew --prefix brotli)" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: make build
+
+      - name: Test
+        run: make test
+
+  markdown-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DavidAnson/markdownlint-cli2-action@v19
