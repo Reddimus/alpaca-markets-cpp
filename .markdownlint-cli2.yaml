@@ -5,6 +5,11 @@ config:
   MD040: false
   MD041: false
   MD060: false
+  # MD004 disables ul-style enforcement so a literal "+" at the start of
+  # an indented continuation line (e.g. "Trading API + Market Data API")
+  # isn't misread as a "+"-style list item. We don't have any actual
+  # "+"-style lists; this just prevents accidental misclassification.
+  MD004: false
   MD024:
     siblings_only: true
 globs:
