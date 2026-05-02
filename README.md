@@ -459,6 +459,22 @@ This C++ SDK aims to provide feature parity with Alpaca's official SDKs:
 | Pagination Helpers            | ✅             |
 | WebSocket Streaming           | 🔄 Placeholder |
 
+## Contributing
+
+Issues and pull requests are welcome. For non-trivial changes please
+open an issue first to discuss the approach. Local dev loop:
+
+```bash
+make build           # cmake -B build && cmake --build build
+make test            # ctest --output-on-failure
+make lint            # clang-format --dry-run -Werror
+make format          # clang-format -i (call before pushing)
+```
+
+CI runs the same lint+build+test on push and PR (Ubuntu 24.04 +
+macos-latest); see `.github/workflows/ci.yml`.
+
+
 ## License
 
 See [LICENSE](LICENSE) file.
