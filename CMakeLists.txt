@@ -68,10 +68,27 @@ find_package(OpenSSL REQUIRED)
 # Find ZLIB for compression support (used by cpp-httplib)
 find_package(ZLIB REQUIRED)
 
-# Find Brotli for compression support (optional, used by cpp-httplib)
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-    pkg_check_modules(BROTLI IMPORTED_TARGET libbrotlidec libbrotlienc)
+# Find Brotli for compression support (optional, used by cpp-httplib).
+# pkg-config isn't available on Windows runners; on Windows we fall
+# back to vcpkg's CMake config-mode for unofficial-brotli.
+if(NOT WIN32)
+    find_package(PkgConfig)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(BROTLI IMPORTED_TARGET libbrotlidec libbrotlienc)
+    endif()
+else()
+    find_package(unofficial-brotli CONFIG QUIET)
+    if(unofficial-brotli_FOUND)
+        # Build a compatible PkgConfig::BROTLI alias so the rest of
+        # the CMakeLists doesn't have to branch on platform.
+        add_library(PkgConfig::BROTLI INTERFACE IMPORTED)
+        target_link_libraries(PkgConfig::BROTLI INTERFACE
+            unofficial::brotli::brotlidec
+            unofficial::brotli::brotlienc
+            unofficial::brotli::brotlicommon
+        )
+        set(BROTLI_FOUND TRUE)
+    endif()
 endif()
 
 # ============================================================================
