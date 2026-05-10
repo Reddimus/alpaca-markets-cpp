@@ -6,6 +6,8 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-05-10
+
 ### CI
 
 - First-ever CI workflow added — build + test + lint on Ubuntu 24.04,
