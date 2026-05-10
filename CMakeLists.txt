@@ -68,10 +68,27 @@ find_package(OpenSSL REQUIRED)
 # Find ZLIB for compression support (used by cpp-httplib)
 find_package(ZLIB REQUIRED)
 
-# Find Brotli for compression support (optional, used by cpp-httplib)
-find_package(PkgConfig)
-if(PkgConfig_FOUND)
-    pkg_check_modules(BROTLI IMPORTED_TARGET libbrotlidec libbrotlienc)
+# Find Brotli for compression support (optional, used by cpp-httplib).
+# pkg-config isn't available on Windows runners; on Windows we fall
+# back to vcpkg's CMake config-mode for unofficial-brotli.
+if(NOT WIN32)
+    find_package(PkgConfig)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(BROTLI IMPORTED_TARGET libbrotlidec libbrotlienc)
+    endif()
+else()
+    find_package(unofficial-brotli CONFIG QUIET)
+    if(unofficial-brotli_FOUND)
+        # Build a compatible PkgConfig::BROTLI alias so the rest of
+        # the CMakeLists doesn't have to branch on platform.
+        add_library(PkgConfig::BROTLI INTERFACE IMPORTED)
+        target_link_libraries(PkgConfig::BROTLI INTERFACE
+            unofficial::brotli::brotlidec
+            unofficial::brotli::brotlienc
+            unofficial::brotli::brotlicommon
+        )
+        set(BROTLI_FOUND TRUE)
+    endif()
 endif()
 
 # ============================================================================
@@ -143,11 +160,18 @@ target_link_libraries(alpaca_markets
         ZLIB::ZLIB
 )
 
-# Optional Brotli support - use library names for export compatibility
+# Optional Brotli support. Link via the PkgConfig::BROTLI imported
+# target — it propagates the right link line on every platform:
+#   - Linux/macOS: pkg_check_modules populates link/include from .pc
+#   - Windows/MSVC: our find_package(unofficial-brotli) wrapper above
+#     builds the same INTERFACE target out of the vcpkg config-mode
+#     unofficial::brotli::brotli{dec,enc,common} primitives.
+# Using ${BROTLI_LIBRARIES} (the legacy variable) only worked on
+# Linux because pkg_check_modules populated it; on Windows it was
+# empty, and the alpaca_markets static archive's brotli symbols
+# went unresolved at executable link time.
 if(BROTLI_FOUND)
-    # Link directly to library files instead of PkgConfig target for export compatibility
-    target_link_libraries(alpaca_markets PUBLIC ${BROTLI_LIBRARIES})
-    target_include_directories(alpaca_markets SYSTEM PUBLIC ${BROTLI_INCLUDE_DIRS})
+    target_link_libraries(alpaca_markets PUBLIC PkgConfig::BROTLI)
     target_compile_definitions(alpaca_markets PRIVATE CPPHTTPLIB_BROTLI_SUPPORT)
     set(ALPACA_MARKETS_BROTLI_ENABLED TRUE CACHE INTERNAL "Brotli support enabled")
 endif()
