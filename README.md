@@ -55,8 +55,8 @@ set(CMAKE_CXX_STANDARD 20)
 include(FetchContent)
 FetchContent_Declare(
     alpaca_markets
-    GIT_REPOSITORY https://github.com/your-org/alpaca-markets-cpp.git
-    GIT_TAG        main  # or a specific tag like v1.0.0
+    GIT_REPOSITORY https://github.com/Reddimus/alpaca-markets-cpp.git
+    GIT_TAG        v0.0.2  # pin a tagged release; see CHANGELOG.md
 )
 FetchContent_MakeAvailable(alpaca_markets)
 
