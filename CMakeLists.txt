@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(alpaca_markets VERSION 0.0.2 LANGUAGES CXX)
+project(alpaca_markets VERSION 0.1.0 LANGUAGES CXX)
 
 # C++23 standard (matches sibling SDKs after 2026-05-11 Glaze migration).
 set(CMAKE_CXX_STANDARD 23)

@@ -6,6 +6,63 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-05-12
+
+### Changed
+
+- **BREAKING**: C++ standard bumped from C++20 to C++23. Glaze's
+  compile-time reflection path requires C++23, and the sibling SDK
+  family (kalshi-cpp, polymarket-cpp, open-meteo-cpp, nws-cpp,
+  ncei-cpp) all target C++23 — alpaca-markets-cpp was the lone
+  C++20 holdout. Consumers must compile with `-std=c++23` (or
+  `cxx_std_23`).
+- **BREAKING**: JSON library migrated from RapidJSON to
+  [Glaze](https://github.com/stephenberry/glaze) v7.6.0 via
+  FetchContent. The `Client::*` public API surface is unchanged
+  and the existing `Status T::fromJSON(const std::string&)` member
+  method contracts on model structs are preserved at the signature
+  level — downstream callers (notably the `ibkr-trainer` fallback)
+  build without modification. What changes is the dependency chain
+  itself: the `-DALPACA_MARKETS_USE_SYSTEM_RAPIDJSON` CMake option
+  is gone and FetchContent now pulls Glaze instead of RapidJSON.
+  Sites that pre-cached the RapidJSON FetchContent dir, or that
+  override `USE_SYSTEM_RAPIDJSON=ON` against a system header, must
+  drop the override.
+
+  Benchmark (x86_64-v3, GCC 13.3, -O3 -DNDEBUG, 21.6KB / 200 bars
+  across two symbols, 1000 iters):
+
+      RapidJSON v1.1.0 : ~1100 us/op  (pre-migration baseline)
+      glaze v7.6.0     :  ~330 us/op  (post-migration)
+      speedup          :  ~3.3x
+
+  See `tests/parse_benchmark.cpp` for the regression guard (1500
+  us/op cap, ctest --timeout = 30s). (PR #11)
+
+- The streaming `{stream, data}` envelope keeps a `glz::generic`
+  outer parse + write_json data-passthrough; typed-union support
+  was considered but the `data` sub-object is open-ended and lives
+  in downstream consumers' code. Documented in
+  `src/stream/streaming.cpp::parseReply`.
+
+### Added
+
+- `tests/glaze_test.cpp` — 11 shape-parity cases covering the
+  migration's highest-risk fixtures: Market Data v2 bars-by-symbol
+  envelope, `LatestTrade`/`LatestQuote` nested-envelope passthrough,
+  `Snapshot`'s 5 sub-models, `OptionContract`'s deliverables array
+  + string-typed enum fields, `News` with images, and the stream-
+  reply discriminator. All 108 tests (94 pre-existing + 11 new +
+  parse benchmark + smoke) pass.
+- `tests/parse_benchmark.cpp` — parse-throughput regression guard,
+  capped at 1500 us/op with a 30s ctest timeout.
+
+### Removed
+
+- RapidJSON FetchContent and the `ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON`
+  CMake option. The `tests/CMakeLists.txt` RapidJSON include dir
+  is no longer needed.
+
 ## [0.0.2] - 2026-05-10
 
 ### CI
@@ -92,5 +149,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - WebSocket streaming module exists as scaffolding but no
   implementation yet
 
-[Unreleased]: https://github.com/Reddimus/alpaca-markets-cpp/compare/v0.0.1...HEAD
+[Unreleased]: https://github.com/Reddimus/alpaca-markets-cpp/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/Reddimus/alpaca-markets-cpp/compare/v0.0.2...v0.1.0
+[0.0.2]: https://github.com/Reddimus/alpaca-markets-cpp/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/Reddimus/alpaca-markets-cpp/releases/tag/v0.0.1
