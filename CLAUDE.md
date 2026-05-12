@@ -19,7 +19,7 @@ make smart-build        # Diff-aware rebuild (tracks .build_sha)
 ## Architecture
 
 - **Modular OBJECT libraries**: `alpaca_markets_models`, `alpaca_markets_rest`, `alpaca_markets_stream` — combined into `alpaca_markets` (with `alpaca::markets` ALIAS)
-- **C++20** (not C++23): cpp-httplib transport, RapidJSON parsing — pragmatic intentional drift from sibling SDKs that use C++23 + nlohmann/json + libcurl
+- **C++23**: cpp-httplib transport + [Glaze](https://github.com/stephenberry/glaze) v7.6.0 via FetchContent (compile-time reflection; migrated 2026-05-11 from RapidJSON, ~3.3x parse speedup on round-trip-heavy Market Data v2 payloads, ~4x on flat numeric payloads — see `tests/parse_benchmark.cpp`).
 - **Origin**: forked from archived upstream `marpaia/alpaca-trade-api-cpp`. Inherited 2020 `v0.0.2`/`v0.0.3` tags are not Reddimus releases — Reddimus's first release is `v0.0.1` (2026-01-17).
 - **REST coverage**: 40+ endpoints across Trading API v2 + Market Data API v2 (Account, Order, Position, Asset, Bars, Quotes, Options, Corporate Actions, News, Crypto)
 - **Stream**: scaffolding only, no WebSocket yet
