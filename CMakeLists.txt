@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.25)
 project(alpaca_markets VERSION 0.0.2 LANGUAGES CXX)
 
-# C++20 standard (widely supported; update to C++23/26 when compilers support it)
-set(CMAKE_CXX_STANDARD 20)
+# C++23 standard (matches sibling SDKs after 2026-05-11 Glaze migration).
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -26,29 +26,21 @@ endif()
 
 option(ALPACA_MARKETS_BUILD_TESTS "Build tests" ${ALPACA_MARKETS_BUILD_TESTS_DEFAULT})
 option(ALPACA_MARKETS_BUILD_EXAMPLES "Build examples" ${ALPACA_MARKETS_BUILD_EXAMPLES_DEFAULT})
-option(ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON "Use system RapidJSON instead of FetchContent" OFF)
 option(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB "Use system cpp-httplib instead of FetchContent" OFF)
 
 # Dependencies
 include(FetchContent)
 
-# RapidJSON (header-only)
-if(ALPACA_MARKETS_USE_SYSTEM_RAPIDJSON)
-    find_package(RapidJSON REQUIRED)
-    set(alpaca_markets_rapidjson_include_dirs ${RapidJSON_INCLUDE_DIRS})
-else()
-    FetchContent_Declare(
-        rapidjson
-        GIT_REPOSITORY https://github.com/Tencent/rapidjson.git
-        GIT_TAG v1.1.0
-    )
-    FetchContent_GetProperties(rapidjson)
-    if(NOT rapidjson_POPULATED)
-        FetchContent_Populate(rapidjson)
-        # Don't add_subdirectory - rapidjson is header-only and its CMakeLists brings in gtest
-    endif()
-    set(alpaca_markets_rapidjson_include_dirs ${rapidjson_SOURCE_DIR}/include)
-endif()
+# Glaze - JSON library (compile-time reflection, ~4x parse speedup over the
+# pre-2026-05-11 RapidJSON path on dense numeric payloads, which is the
+# Market Data API v2 hot path). License: MIT.
+FetchContent_Declare(
+    glaze
+    GIT_REPOSITORY https://github.com/stephenberry/glaze.git
+    GIT_TAG v7.6.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(glaze)
 
 # cpp-httplib (header-only)
 if(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB)
@@ -101,10 +93,7 @@ add_library(alpaca_markets_models OBJECT ${ALPACA_MODELS_SOURCES})
 target_include_directories(alpaca_markets_models PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
-target_include_directories(alpaca_markets_models SYSTEM PRIVATE
-    ${alpaca_markets_rapidjson_include_dirs}
-)
+target_link_libraries(alpaca_markets_models PRIVATE glaze::glaze)
 
 # REST module
 file(GLOB ALPACA_REST_SOURCES "src/rest/*.cpp")
@@ -112,11 +101,7 @@ add_library(alpaca_markets_rest OBJECT ${ALPACA_REST_SOURCES})
 target_include_directories(alpaca_markets_rest PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
-target_include_directories(alpaca_markets_rest SYSTEM PRIVATE
-    ${alpaca_markets_rapidjson_include_dirs}
-)
-target_link_libraries(alpaca_markets_rest PRIVATE httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
+target_link_libraries(alpaca_markets_rest PRIVATE httplib::httplib OpenSSL::SSL OpenSSL::Crypto glaze::glaze)
 target_compile_definitions(alpaca_markets_rest PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
 # Stream module
@@ -125,10 +110,7 @@ add_library(alpaca_markets_stream OBJECT ${ALPACA_STREAM_SOURCES})
 target_include_directories(alpaca_markets_stream PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
 )
-# Mark RapidJSON as SYSTEM to suppress third-party deprecation warnings
-target_include_directories(alpaca_markets_stream SYSTEM PRIVATE
-    ${alpaca_markets_rapidjson_include_dirs}
-)
+target_link_libraries(alpaca_markets_stream PRIVATE glaze::glaze)
 
 # ============================================================================
 # Main library (combines all modules)
@@ -145,12 +127,7 @@ target_include_directories(alpaca_markets PUBLIC
     $<INSTALL_INTERFACE:include>
 )
 
-target_compile_features(alpaca_markets PUBLIC cxx_std_20)
-
-# RapidJSON include directory (SYSTEM to suppress third-party warnings)
-target_include_directories(alpaca_markets SYSTEM PRIVATE
-    ${alpaca_markets_rapidjson_include_dirs}
-)
+target_compile_features(alpaca_markets PUBLIC cxx_std_23)
 
 # Link dependencies
 target_link_libraries(alpaca_markets
@@ -161,7 +138,7 @@ target_link_libraries(alpaca_markets
 )
 
 # Optional Brotli support. Link via the PkgConfig::BROTLI imported
-# target — it propagates the right link line on every platform:
+# target - it propagates the right link line on every platform:
 #   - Linux/macOS: pkg_check_modules populates link/include from .pc
 #   - Windows/MSVC: our find_package(unofficial-brotli) wrapper above
 #     builds the same INTERFACE target out of the vcpkg config-mode
@@ -186,14 +163,14 @@ set_target_properties(alpaca_markets PROPERTIES EXPORT_NAME markets)
 # Tests
 if(ALPACA_MARKETS_BUILD_TESTS)
     enable_testing()
-    
+
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG v1.14.0
     )
     FetchContent_MakeAvailable(googletest)
-    
+
     # Suppress warnings for third-party googletest/googlemock targets
     if(TARGET gtest)
         target_compile_options(gtest PRIVATE -w)
@@ -207,7 +184,7 @@ if(ALPACA_MARKETS_BUILD_TESTS)
     if(TARGET gmock_main)
         target_compile_options(gmock_main PRIVATE -w)
     endif()
-    
+
     add_subdirectory(tests)
 endif()
 

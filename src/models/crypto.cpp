@@ -1,8 +1,5 @@
 #include <alpaca/markets/crypto.hpp>
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 #include "../detail/json.hpp"
 
 namespace alpaca::markets {
@@ -26,150 +23,89 @@ CryptoFeed stringToCryptoFeed(const std::string& s) {
 }
 
 Status CryptoTrade::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto trade JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto trade");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto trade object");
-    }
-
-    PARSE_DOUBLE(price, "p")
-    PARSE_UINT64(size, "s")
-    PARSE_STRING(timestamp, "t")
-    PARSE_UINT64(id, "i")
-    PARSE_STRING(taker_side, "tks")
+    PARSE_DOUBLE(price, "p");
+    PARSE_UINT64(size, "s");
+    PARSE_STRING(timestamp, "t");
+    PARSE_UINT64(id, "i");
+    PARSE_STRING(taker_side, "tks");
 
     return Status();
 }
 
 Status CryptoQuote::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto quote JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto quote");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto quote object");
-    }
-
-    PARSE_DOUBLE(ask_price, "ap")
-    PARSE_DOUBLE(ask_size, "as")
-    PARSE_DOUBLE(bid_price, "bp")
-    PARSE_DOUBLE(bid_size, "bs")
-    PARSE_STRING(timestamp, "t")
+    PARSE_DOUBLE(ask_price, "ap");
+    PARSE_DOUBLE(ask_size, "as");
+    PARSE_DOUBLE(bid_price, "bp");
+    PARSE_DOUBLE(bid_size, "bs");
+    PARSE_STRING(timestamp, "t");
 
     return Status();
 }
 
 Status CryptoBar::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto bar JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto bar");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto bar object");
-    }
-
-    PARSE_STRING(timestamp, "t")
-    PARSE_DOUBLE(open_price, "o")
-    PARSE_DOUBLE(high_price, "h")
-    PARSE_DOUBLE(low_price, "l")
-    PARSE_DOUBLE(close_price, "c")
-    PARSE_DOUBLE(volume, "v")
-    PARSE_UINT64(trade_count, "n")
-    PARSE_DOUBLE(vwap, "vw")
+    PARSE_STRING(timestamp, "t");
+    PARSE_DOUBLE(open_price, "o");
+    PARSE_DOUBLE(high_price, "h");
+    PARSE_DOUBLE(low_price, "l");
+    PARSE_DOUBLE(close_price, "c");
+    PARSE_DOUBLE(volume, "v");
+    PARSE_UINT64(trade_count, "n");
+    PARSE_DOUBLE(vwap, "vw");
 
     return Status();
 }
 
+namespace {
+
+Status parseNested(const glz::generic::object_t& obj, const char* key, auto& target_model) {
+    glz::generic::object_t::const_iterator it = obj.find(key);
+    if (it == obj.end() || !it->second.is_object()) {
+        return Status();
+    }
+    return target_model.fromJSON(json_detail::write(it->second));
+}
+
+}  // namespace
+
 Status CryptoSnapshot::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto snapshot JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto snapshot");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto snapshot object");
+    if (Status s = parseNested(node, "latestTrade", latest_trade); !s.ok()) {
+        return s;
     }
-
-    // Parse latest trade
-    if (d.HasMember("latestTrade") && d["latestTrade"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["latestTrade"].Accept(writer);
-        if (Status status = latest_trade.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "latestQuote", latest_quote); !s.ok()) {
+        return s;
     }
-
-    // Parse latest quote
-    if (d.HasMember("latestQuote") && d["latestQuote"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["latestQuote"].Accept(writer);
-        if (Status status = latest_quote.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "minuteBar", minute_bar); !s.ok()) {
+        return s;
     }
-
-    // Parse minute bar
-    if (d.HasMember("minuteBar") && d["minuteBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["minuteBar"].Accept(writer);
-        if (Status status = minute_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "dailyBar", daily_bar); !s.ok()) {
+        return s;
     }
-
-    // Parse daily bar
-    if (d.HasMember("dailyBar") && d["dailyBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["dailyBar"].Accept(writer);
-        if (Status status = daily_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
-    }
-
-    // Parse previous daily bar
-    if (d.HasMember("prevDailyBar") && d["prevDailyBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["prevDailyBar"].Accept(writer);
-        if (Status status = prev_daily_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "prevDailyBar", prev_daily_bar); !s.ok()) {
+        return s;
     }
 
     return Status();
 }
 
 Status CryptoTrades::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto trades JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto trades");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto trades object");
-    }
-
-    if (d.HasMember("trades") && d["trades"].IsObject()) {
-        for (auto& m : d["trades"].GetObject()) {
-            std::string symbol = m.name.GetString();
+    glz::generic::object_t::const_iterator trades_it = node.find("trades");
+    if (trades_it != node.end() && trades_it->second.is_object()) {
+        for (const auto& [symbol, value] : trades_it->second.get_object()) {
             std::vector<CryptoTrade> symbol_trades;
-
-            if (m.value.IsArray()) {
-                for (auto& item : m.value.GetArray()) {
+            if (value.is_array()) {
+                for (const glz::generic& item : value.get_array()) {
                     CryptoTrade trade;
-                    rapidjson::StringBuffer s;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-                    item.Accept(writer);
-                    if (Status status = trade.fromJSON(s.GetString()); !status.ok()) {
+                    if (Status status = trade.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;
                     }
                     symbol_trades.push_back(trade);
@@ -179,33 +115,22 @@ Status CryptoTrades::fromJSON(const std::string& json) {
         }
     }
 
-    PARSE_STRING(next_page_token, "next_page_token")
+    PARSE_STRING(next_page_token, "next_page_token");
 
     return Status();
 }
 
 Status CryptoQuotes::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto quotes JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto quotes");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto quotes object");
-    }
-
-    if (d.HasMember("quotes") && d["quotes"].IsObject()) {
-        for (auto& m : d["quotes"].GetObject()) {
-            std::string symbol = m.name.GetString();
+    glz::generic::object_t::const_iterator quotes_it = node.find("quotes");
+    if (quotes_it != node.end() && quotes_it->second.is_object()) {
+        for (const auto& [symbol, value] : quotes_it->second.get_object()) {
             std::vector<CryptoQuote> symbol_quotes;
-
-            if (m.value.IsArray()) {
-                for (auto& item : m.value.GetArray()) {
+            if (value.is_array()) {
+                for (const glz::generic& item : value.get_array()) {
                     CryptoQuote quote;
-                    rapidjson::StringBuffer s;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-                    item.Accept(writer);
-                    if (Status status = quote.fromJSON(s.GetString()); !status.ok()) {
+                    if (Status status = quote.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;
                     }
                     symbol_quotes.push_back(quote);
@@ -215,33 +140,22 @@ Status CryptoQuotes::fromJSON(const std::string& json) {
         }
     }
 
-    PARSE_STRING(next_page_token, "next_page_token")
+    PARSE_STRING(next_page_token, "next_page_token");
 
     return Status();
 }
 
 Status CryptoBars::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing crypto bars JSON");
-    }
+    JSON_FROMJSON_PRELUDE("crypto bars");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a crypto bars object");
-    }
-
-    if (d.HasMember("bars") && d["bars"].IsObject()) {
-        for (auto& m : d["bars"].GetObject()) {
-            std::string symbol = m.name.GetString();
+    glz::generic::object_t::const_iterator bars_it = node.find("bars");
+    if (bars_it != node.end() && bars_it->second.is_object()) {
+        for (const auto& [symbol, value] : bars_it->second.get_object()) {
             std::vector<CryptoBar> symbol_bars;
-
-            if (m.value.IsArray()) {
-                for (auto& item : m.value.GetArray()) {
+            if (value.is_array()) {
+                for (const glz::generic& item : value.get_array()) {
                     CryptoBar bar;
-                    rapidjson::StringBuffer s;
-                    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-                    item.Accept(writer);
-                    if (Status status = bar.fromJSON(s.GetString()); !status.ok()) {
+                    if (Status status = bar.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;
                     }
                     symbol_bars.push_back(bar);
@@ -251,7 +165,7 @@ Status CryptoBars::fromJSON(const std::string& json) {
         }
     }
 
-    PARSE_STRING(next_page_token, "next_page_token")
+    PARSE_STRING(next_page_token, "next_page_token");
 
     return Status();
 }

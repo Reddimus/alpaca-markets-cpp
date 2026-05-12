@@ -1,94 +1,53 @@
 #include <alpaca/markets/snapshot.hpp>
 
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
-
 #include "../detail/json.hpp"
 
 namespace alpaca::markets {
 
+namespace {
+
+// Helper to dispatch a nested-object sub-key to a target model's fromJSON.
+Status parseNested(const glz::generic::object_t& obj, const char* key, auto& target_model) {
+    glz::generic::object_t::const_iterator it = obj.find(key);
+    if (it == obj.end() || !it->second.is_object()) {
+        return Status();  // optional - absence is fine
+    }
+    return target_model.fromJSON(json_detail::write(it->second));
+}
+
+}  // namespace
+
 Status Snapshot::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing snapshot JSON");
-    }
+    JSON_FROMJSON_PRELUDE("snapshot");
 
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a snapshot object");
+    if (Status s = parseNested(node, "latestTrade", latest_trade); !s.ok()) {
+        return s;
     }
-
-    // Parse latest trade
-    if (d.HasMember("latestTrade") && d["latestTrade"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["latestTrade"].Accept(writer);
-        if (Status status = latest_trade.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "latestQuote", latest_quote); !s.ok()) {
+        return s;
     }
-
-    // Parse latest quote
-    if (d.HasMember("latestQuote") && d["latestQuote"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["latestQuote"].Accept(writer);
-        if (Status status = latest_quote.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "minuteBar", minute_bar); !s.ok()) {
+        return s;
     }
-
-    // Parse minute bar
-    if (d.HasMember("minuteBar") && d["minuteBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["minuteBar"].Accept(writer);
-        if (Status status = minute_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "dailyBar", daily_bar); !s.ok()) {
+        return s;
     }
-
-    // Parse daily bar
-    if (d.HasMember("dailyBar") && d["dailyBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["dailyBar"].Accept(writer);
-        if (Status status = daily_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
-    }
-
-    // Parse previous daily bar
-    if (d.HasMember("prevDailyBar") && d["prevDailyBar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["prevDailyBar"].Accept(writer);
-        if (Status status = prev_daily_bar.fromJSON(s.GetString()); !status.ok()) {
-            return status;
-        }
+    if (Status s = parseNested(node, "prevDailyBar", prev_daily_bar); !s.ok()) {
+        return s;
     }
 
     return Status();
 }
 
 Status Snapshots::fromJSON(const std::string& json) {
-    rapidjson::Document d;
-    if (d.Parse(json.c_str()).HasParseError()) {
-        return Status(1, "Received parse error when deserializing snapshots JSON");
-    }
-
-    if (!d.IsObject()) {
-        return Status(1, "Deserialized valid JSON but it wasn't a snapshots object");
-    }
+    JSON_FROMJSON_PRELUDE("snapshots");
 
     // Parse snapshots - keyed by symbol
-    if (d.HasMember("snapshots") && d["snapshots"].IsObject()) {
-        for (auto& m : d["snapshots"].GetObject()) {
-            std::string symbol = m.name.GetString();
+    glz::generic::object_t::const_iterator it = node.find("snapshots");
+    if (it != node.end() && it->second.is_object()) {
+        for (const auto& [symbol, value] : it->second.get_object()) {
             Snapshot snapshot;
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = snapshot.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = snapshot.fromJSON(json_detail::write(value)); !status.ok()) {
                 return status;
             }
             snapshots[symbol] = snapshot;

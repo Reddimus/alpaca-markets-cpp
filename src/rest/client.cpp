@@ -1,14 +1,17 @@
 #include <alpaca/markets/client.hpp>
 
+#include <glaze/glaze.hpp>
+#include <glaze/json/generic.hpp>
 #include <httplib.h>
-#include <rapidjson/document.h>
-#include <rapidjson/stringbuffer.h>
-#include <rapidjson/writer.h>
 
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <string>
+#include <string_view>
 #include <utility>
+
+#include "../detail/json.hpp"
 
 namespace alpaca::markets {
 
@@ -22,12 +25,93 @@ httplib::Headers makeHeaders(const Environment& environment) {
     };
 }
 
+// ----- Outer-envelope walk helpers ----------------------------------------
+// These wrap the dispatcher pattern that the old RapidJSON path implemented
+// inline: parse the top-level body, drill into a nested object/array, hand
+// each element's JSON to the corresponding model's fromJSON(string).
+
+template <class T>
+Status walkArrayInto(const glz::generic& root, std::vector<T>& out) {
+    if (!root.is_array()) {
+        return Status(1, "Expected JSON array at root");
+    }
+    for (const glz::generic& elem : root.get_array()) {
+        T item;
+        if (Status s = item.fromJSON(json_detail::write(elem)); !s.ok()) {
+            return s;
+        }
+        out.push_back(std::move(item));
+    }
+    return Status();
+}
+
+template <class T>
+Status walkArrayInto(const glz::generic& root, std::string_view key, std::vector<T>& out) {
+    if (!root.is_object()) {
+        return Status();  // nothing to do; preserve previous lenient behaviour
+    }
+    const glz::generic::object_t& obj = root.get_object();
+    glz::generic::object_t::const_iterator it = obj.find(key);
+    if (it == obj.end() || !it->second.is_array()) {
+        return Status();
+    }
+    for (const glz::generic& elem : it->second.get_array()) {
+        T item;
+        if (Status s = item.fromJSON(json_detail::write(elem)); !s.ok()) {
+            return s;
+        }
+        out.push_back(std::move(item));
+    }
+    return Status();
+}
+
+template <class T>
+Status walkObjectIntoMap(const glz::generic& root, std::string_view key, std::map<std::string, T>& out) {
+    if (!root.is_object()) {
+        return Status();
+    }
+    const glz::generic::object_t& obj = root.get_object();
+    glz::generic::object_t::const_iterator it = obj.find(key);
+    if (it == obj.end() || !it->second.is_object()) {
+        return Status();
+    }
+    for (const auto& [sym, val] : it->second.get_object()) {
+        T item;
+        if (Status s = item.fromJSON(json_detail::write(val)); !s.ok()) {
+            return s;
+        }
+        out[sym] = std::move(item);
+    }
+    return Status();
+}
+
+// Extract a nested object-typed field's JSON string back out, if present
+// and an object.
+std::optional<std::string> extractSubObjectJson(const glz::generic& root, std::string_view key) {
+    if (!root.is_object()) {
+        return std::nullopt;
+    }
+    const glz::generic::object_t& obj = root.get_object();
+    glz::generic::object_t::const_iterator it = obj.find(key);
+    if (it == obj.end() || !it->second.is_object()) {
+        return std::nullopt;
+    }
+    return json_detail::write(it->second);
+}
+
+bool extractStringField(const glz::generic& root, std::string_view key, std::string& out) {
+    if (!root.is_object()) {
+        return false;
+    }
+    return json_detail::obj_get_string(root.get_object(), key, out);
+}
+
 /**
  * @brief Parse an API error from a non-200 HTTP response.
- * 
+ *
  * Alpaca API error responses typically have the format:
  * {"code": 40010000, "message": "error description"}
- * 
+ *
  * @param status_code HTTP status code
  * @param body Response body (JSON)
  * @return APIError with parsed details or generic error
@@ -35,17 +119,20 @@ httplib::Headers makeHeaders(const Environment& environment) {
 APIError parseAPIError(int status_code, const std::string& body) {
     int api_code = 0;
     std::string message = body;
-    
-    rapidjson::Document d;
-    if (!d.Parse(body.c_str()).HasParseError() && d.IsObject()) {
-        if (d.HasMember("code") && d["code"].IsInt()) {
-            api_code = d["code"].GetInt();
+
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, body); !ec && root.is_object()) {
+        const glz::generic::object_t& obj = root.get_object();
+        int parsed_code = 0;
+        if (json_detail::obj_get_int(obj, "code", parsed_code)) {
+            api_code = parsed_code;
         }
-        if (d.HasMember("message") && d["message"].IsString()) {
-            message = d["message"].GetString();
+        std::string parsed_msg;
+        if (json_detail::obj_get_string(obj, "message", parsed_msg)) {
+            message = parsed_msg;
         }
     }
-    
+
     return APIError(status_code, api_code, message, body);
 }
 
@@ -112,28 +199,21 @@ std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(boo
                                                                              bool suspend_trade) const {
     AccountConfigurations account_configurations;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("no_shorting");
-    writer.Bool(no_shorting);
-
-    writer.Key("dtbp_check");
-    writer.String(dtbp_check.c_str());
-
-    writer.Key("trade_confirm_email");
-    writer.String(trade_confirm_email.c_str());
-
-    writer.Key("suspend_trade");
-    writer.Bool(suspend_trade);
-
-    writer.EndObject();
-    const char* body = s.GetString();
+    // Build the patch body via Glaze. Using a glz::generic ordered_map
+    // matches the field order the previous RapidJSON Writer emitted; the
+    // server doesn't care about key order but log diffs stay readable.
+    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic::object_t& obj = body_obj.get_object();
+    obj["no_shorting"] = no_shorting;
+    obj["dtbp_check"] = dtbp_check;
+    obj["trade_confirm_email"] = trade_confirm_email;
+    obj["suspend_trade"] = suspend_trade;
+    std::string body;
+    (void)glz::write_json(body_obj, body);
 
     httplib::SSLClient client(environment_.getTradingHost());
-    httplib::Result resp = client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
+    httplib::Result resp =
+        client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
                               account_configurations);
@@ -177,32 +257,38 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
         return std::make_pair(Status(1, ss.str()), activities);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    // Activities is an array of mixed-typed records discriminated by the
+    // "activity_type" field. Walk the array element-by-element, dispatch
+    // to the appropriate model. Glaze's tagged-union support would fit
+    // here once we hoist the activity_type → model mapping into a
+    // glz::meta with a discriminator tag, but the activity_type strings
+    // are open-ended ("FILL", "DIV", "INT", "JNL", ...) and only "FILL"
+    // dispatches to TradeActivity, so the explicit switch stays cheaper.
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing activities JSON"), activities);
     }
-    for (auto& a : d.GetArray()) {
+    if (!root.is_array()) {
+        return std::make_pair(Status(1, "Expected array of activities"), activities);
+    }
+    for (const glz::generic& elem : root.get_array()) {
+        if (!elem.is_object()) {
+            return std::make_pair(Status(1, "Activity entry wasn't an object"), activities);
+        }
         std::string activity_type;
-        if (a.HasMember("activity_type") && a["activity_type"].IsString()) {
-            activity_type = a["activity_type"].GetString();
-        } else {
+        if (!json_detail::obj_get_string(elem.get_object(), "activity_type", activity_type)) {
             return std::make_pair(Status(1, "Activity didn't have activity_type attribute"), activities);
         }
-
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        a.Accept(writer);
-
+        std::string entry_json = json_detail::write(elem);
         if (activity_type == "FILL") {
             TradeActivity activity;
-            if (Status status = activity.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = activity.fromJSON(entry_json); !status.ok()) {
                 return std::make_pair(status, activities);
             }
             activities.push_back(activity);
         } else {
             NonTradeActivity activity;
-            if (Status status = activity.fromJSON(s.GetString()); !status.ok()) {
+            if (Status status = activity.fromJSON(entry_json); !status.ok()) {
                 return std::make_pair(status, activities);
             }
             activities.push_back(activity);
@@ -296,20 +382,12 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
         return std::make_pair(Status(1, ss.str()), orders);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
     }
-    for (auto& o : d.GetArray()) {
-        Order order;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status parse_status = order.fromJSON(s.GetString()); !parse_status.ok()) {
-            return std::make_pair(parse_status, orders);
-        }
-        orders.push_back(order);
+    if (Status s = walkArrayInto(root, orders); !s.ok()) {
+        return std::make_pair(s, orders);
     }
 
     return std::make_pair(Status(), orders);
@@ -319,94 +397,63 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
                                              OrderTimeInForce tif, const std::string& limit_price,
                                              const std::string& stop_price, bool extended_hours,
                                              const std::string& client_order_id, OrderClass order_class,
-                                             TakeProfitParams* take_profit_params,
-                                             StopLossParams* stop_loss_params,
-                                             const std::string& trail_price,
-                                             const std::string& trail_percent) const {
+                                             TakeProfitParams* take_profit_params, StopLossParams* stop_loss_params,
+                                             const std::string& trail_price, const std::string& trail_percent) const {
     Order order;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("symbol");
-    writer.String(symbol.c_str());
-
-    writer.Key("qty");
-    writer.Int(quantity);
-
-    writer.Key("side");
-    writer.String(orderSideToString(side).c_str());
-
-    writer.Key("type");
-    writer.String(orderTypeToString(type).c_str());
-
-    writer.Key("time_in_force");
-    writer.String(orderTimeInForceToString(tif).c_str());
+    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic::object_t& obj = body_obj.get_object();
+    obj["symbol"] = symbol;
+    obj["qty"] = static_cast<double>(quantity);  // serialised as integer below; v2 API accepts numeric qty for shares
+    obj["side"] = orderSideToString(side);
+    obj["type"] = orderTypeToString(type);
+    obj["time_in_force"] = orderTimeInForceToString(tif);
 
     if (!limit_price.empty()) {
-        writer.Key("limit_price");
-        writer.String(limit_price.c_str());
+        obj["limit_price"] = limit_price;
     }
-
     if (!stop_price.empty()) {
-        writer.Key("stop_price");
-        writer.String(stop_price.c_str());
+        obj["stop_price"] = stop_price;
     }
-
-    // Trailing stop parameters
     if (!trail_price.empty()) {
-        writer.Key("trail_price");
-        writer.String(trail_price.c_str());
+        obj["trail_price"] = trail_price;
     }
-
     if (!trail_percent.empty()) {
-        writer.Key("trail_percent");
-        writer.String(trail_percent.c_str());
+        obj["trail_percent"] = trail_percent;
     }
-
     if (extended_hours) {
-        writer.Key("extended_hours");
-        writer.Bool(extended_hours);
+        obj["extended_hours"] = extended_hours;
     }
-
     if (!client_order_id.empty()) {
-        writer.Key("client_order_id");
-        writer.String(client_order_id.c_str());
+        obj["client_order_id"] = client_order_id;
     }
-
     if (order_class != OrderClass::Simple) {
-        writer.Key("order_class");
-        writer.String(orderClassToString(order_class).c_str());
+        obj["order_class"] = orderClassToString(order_class);
     }
 
     if (take_profit_params != nullptr) {
-        writer.Key("take_profit");
-        writer.StartObject();
+        glz::generic tp = glz::generic::object_t{};
+        glz::generic::object_t& tp_obj = tp.get_object();
         if (!take_profit_params->limitPrice.empty()) {
-            writer.Key("limit_price");
-            writer.String(take_profit_params->limitPrice.c_str());
+            tp_obj["limit_price"] = take_profit_params->limitPrice;
         }
-        writer.EndObject();
+        obj["take_profit"] = std::move(tp);
     }
 
     if (stop_loss_params != nullptr) {
-        writer.Key("stop_loss");
-        writer.StartObject();
+        glz::generic sl = glz::generic::object_t{};
+        glz::generic::object_t& sl_obj = sl.get_object();
         if (!stop_loss_params->limitPrice.empty()) {
-            writer.Key("limit_price");
-            writer.String(stop_loss_params->limitPrice.c_str());
+            sl_obj["limit_price"] = stop_loss_params->limitPrice;
         }
         if (!stop_loss_params->stopPrice.empty()) {
-            writer.Key("stop_price");
-            writer.String(stop_loss_params->stopPrice.c_str());
+            sl_obj["stop_price"] = stop_loss_params->stopPrice;
         }
-        writer.EndObject();
+        obj["stop_loss"] = std::move(sl);
     }
 
-    writer.EndObject();
-    const char* body = s.GetString();
+    std::string body;
+    (void)glz::write_json(body_obj, body);
 
     httplib::SSLClient client(environment_.getTradingHost());
     httplib::Result resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
@@ -424,48 +471,29 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
 }
 
 std::pair<Status, Order> Client::submitNotionalOrder(const std::string& symbol, const std::string& notional,
-                                                      OrderSide side, OrderType type, OrderTimeInForce tif,
-                                                      const std::string& limit_price, bool extended_hours,
-                                                      const std::string& client_order_id) const {
+                                                     OrderSide side, OrderType type, OrderTimeInForce tif,
+                                                     const std::string& limit_price, bool extended_hours,
+                                                     const std::string& client_order_id) const {
     Order order;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("symbol");
-    writer.String(symbol.c_str());
-
-    writer.Key("notional");
-    writer.String(notional.c_str());
-
-    writer.Key("side");
-    writer.String(orderSideToString(side).c_str());
-
-    writer.Key("type");
-    writer.String(orderTypeToString(type).c_str());
-
-    writer.Key("time_in_force");
-    writer.String(orderTimeInForceToString(tif).c_str());
-
+    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic::object_t& obj = body_obj.get_object();
+    obj["symbol"] = symbol;
+    obj["notional"] = notional;
+    obj["side"] = orderSideToString(side);
+    obj["type"] = orderTypeToString(type);
+    obj["time_in_force"] = orderTimeInForceToString(tif);
     if (!limit_price.empty()) {
-        writer.Key("limit_price");
-        writer.String(limit_price.c_str());
+        obj["limit_price"] = limit_price;
     }
-
     if (extended_hours) {
-        writer.Key("extended_hours");
-        writer.Bool(extended_hours);
+        obj["extended_hours"] = extended_hours;
     }
-
     if (!client_order_id.empty()) {
-        writer.Key("client_order_id");
-        writer.String(client_order_id.c_str());
+        obj["client_order_id"] = client_order_id;
     }
-
-    writer.EndObject();
-    const char* body = s.GetString();
+    std::string body;
+    (void)glz::write_json(body_obj, body);
 
     httplib::SSLClient client(environment_.getTradingHost());
     httplib::Result resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
@@ -487,34 +515,21 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
                                               const std::string& client_order_id) const {
     Order order;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("qty");
-    writer.Int(quantity);
-
-    writer.Key("time_in_force");
-    writer.String(orderTimeInForceToString(tif).c_str());
-
+    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic::object_t& obj = body_obj.get_object();
+    obj["qty"] = static_cast<double>(quantity);
+    obj["time_in_force"] = orderTimeInForceToString(tif);
     if (!limit_price.empty()) {
-        writer.Key("limit_price");
-        writer.String(limit_price.c_str());
+        obj["limit_price"] = limit_price;
     }
-
     if (!stop_price.empty()) {
-        writer.Key("stop_price");
-        writer.String(stop_price.c_str());
+        obj["stop_price"] = stop_price;
     }
-
     if (!client_order_id.empty()) {
-        writer.Key("client_order_id");
-        writer.String(client_order_id.c_str());
+        obj["client_order_id"] = client_order_id;
     }
-
-    writer.EndObject();
-    const char* body = s.GetString();
+    std::string body;
+    (void)glz::write_json(body_obj, body);
 
     std::string url = "/v2/orders/" + id;
 
@@ -550,20 +565,12 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
         return std::make_pair(Status(1, ss.str()), orders);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
     }
-    for (auto& o : d.GetArray()) {
-        Order order;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = order.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, orders);
-        }
-        orders.push_back(order);
+    if (Status s = walkArrayInto(root, orders); !s.ok()) {
+        return std::make_pair(s, orders);
     }
 
     return std::make_pair(Status(), orders);
@@ -611,20 +618,12 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
         return std::make_pair(Status(1, ss.str()), positions);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
     }
-    for (auto& o : d.GetArray()) {
-        Position position;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = position.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, positions);
-        }
-        positions.push_back(position);
+    if (Status s = walkArrayInto(root, positions); !s.ok()) {
+        return std::make_pair(s, positions);
     }
 
     return std::make_pair(Status(), positions);
@@ -667,20 +666,12 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
         return std::make_pair(Status(1, ss.str()), positions);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
     }
-    for (auto& o : d.GetArray()) {
-        Position position;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = position.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, positions);
-        }
-        positions.push_back(position);
+    if (Status s = walkArrayInto(root, positions); !s.ok()) {
+        return std::make_pair(s, positions);
     }
 
     return std::make_pair(Status(), positions);
@@ -737,20 +728,12 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
         return std::make_pair(Status(1, ss.str()), assets);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing assets JSON"), assets);
     }
-    for (auto& o : d.GetArray()) {
-        Asset asset;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = asset.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, assets);
-        }
-        assets.push_back(asset);
+    if (Status s = walkArrayInto(root, assets); !s.ok()) {
+        return std::make_pair(s, assets);
     }
 
     return std::make_pair(Status(), assets);
@@ -816,20 +799,12 @@ std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& star
         return std::make_pair(Status(1, ss.str()), dates);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing calendar JSON"), dates);
     }
-    for (auto& o : d.GetArray()) {
-        Date date;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = date.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, dates);
-        }
-        dates.push_back(date);
+    if (Status s = walkArrayInto(root, dates); !s.ok()) {
+        return std::make_pair(s, dates);
     }
 
     return std::make_pair(Status(), dates);
@@ -852,20 +827,12 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
         return std::make_pair(Status(1, ss.str()), watchlists);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing watchlists JSON"), watchlists);
     }
-    for (auto& o : d.GetArray()) {
-        Watchlist watchlist;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = watchlist.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, watchlists);
-        }
-        watchlists.push_back(watchlist);
+    if (Status s = walkArrayInto(root, watchlists); !s.ok()) {
+        return std::make_pair(s, watchlists);
     }
 
     return std::make_pair(Status(), watchlists);
@@ -892,27 +859,29 @@ std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
 }
 
+namespace {
+// Helper: build {"name": <name>, "symbols": [<symbols>]} body
+std::string makeWatchlistBody(const std::string& name, const std::vector<std::string>& symbols) {
+    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic::object_t& obj = body_obj.get_object();
+    obj["name"] = name;
+    glz::generic arr = glz::generic::array_t{};
+    glz::generic::array_t& a = arr.get_array();
+    for (const std::string& symbol : symbols) {
+        a.emplace_back(symbol);
+    }
+    obj["symbols"] = std::move(arr);
+    std::string out;
+    (void)glz::write_json(body_obj, out);
+    return out;
+}
+}  // namespace
+
 std::pair<Status, Watchlist> Client::createWatchlist(const std::string& name,
                                                      const std::vector<std::string>& symbols) const {
     Watchlist watchlist;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("name");
-    writer.String(name.c_str());
-
-    writer.Key("symbols");
-    writer.StartArray();
-    for (const auto& symbol : symbols) {
-        writer.String(symbol.c_str());
-    }
-    writer.EndArray();
-
-    writer.EndObject();
-    const char* body = s.GetString();
+    std::string body = makeWatchlistBody(name, symbols);
 
     httplib::SSLClient client(environment_.getTradingHost());
     httplib::Result resp = client.Post("/v2/watchlists", makeHeaders(environment_), body, kJSONContentType);
@@ -933,23 +902,7 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
                                                      const std::vector<std::string>& symbols) const {
     Watchlist watchlist;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-    writer.StartObject();
-
-    writer.Key("name");
-    writer.String(name.c_str());
-
-    writer.Key("symbols");
-    writer.StartArray();
-    for (const auto& symbol : symbols) {
-        writer.String(symbol.c_str());
-    }
-    writer.EndArray();
-
-    writer.EndObject();
-    const char* body = s.GetString();
+    std::string body = makeWatchlistBody(name, symbols);
 
     std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
@@ -990,15 +943,10 @@ Status Client::deleteWatchlist(const std::string& id) const {
 std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id, const std::string& symbol) const {
     Watchlist watchlist;
 
-    rapidjson::StringBuffer s;
-    s.Clear();
-    rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-
-    writer.StartObject();
-    writer.Key("symbol");
-    writer.String(symbol.c_str());
-    writer.EndObject();
-    const char* body = s.GetString();
+    glz::generic body_obj = glz::generic::object_t{};
+    body_obj.get_object()["symbol"] = symbol;
+    std::string body;
+    (void)glz::write_json(body_obj, body);
 
     std::string url = "/v2/watchlists/" + id;
     httplib::SSLClient client(environment_.getTradingHost());
@@ -1221,23 +1169,12 @@ std::pair<Status, std::map<std::string, Trade>> Client::getLatestTrades(const st
         return std::make_pair(Status(1, ss.str()), trades);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest trades JSON"), trades);
     }
-
-    if (d.HasMember("trades") && d["trades"].IsObject()) {
-        for (auto& m : d["trades"].GetObject()) {
-            Trade trade;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = trade.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, trades);
-            }
-            trades[m.name.GetString()] = trade;
-        }
+    if (Status s = walkObjectIntoMap(root, "trades", trades); !s.ok()) {
+        return std::make_pair(s, trades);
     }
 
     return std::make_pair(Status(), trades);
@@ -1270,23 +1207,12 @@ std::pair<Status, std::map<std::string, Quote>> Client::getLatestQuotes(const st
         return std::make_pair(Status(1, ss.str()), quotes);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest quotes JSON"), quotes);
     }
-
-    if (d.HasMember("quotes") && d["quotes"].IsObject()) {
-        for (auto& m : d["quotes"].GetObject()) {
-            Quote quote;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = quote.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, quotes);
-            }
-            quotes[m.name.GetString()] = quote;
-        }
+    if (Status s = walkObjectIntoMap(root, "quotes", quotes); !s.ok()) {
+        return std::make_pair(s, quotes);
     }
 
     return std::make_pair(Status(), quotes);
@@ -1295,12 +1221,8 @@ std::pair<Status, std::map<std::string, Quote>> Client::getLatestQuotes(const st
 // ==================== Corporate Actions ====================
 
 std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
-    const std::vector<std::string>& ca_types,
-    const std::string& since,
-    const std::string& until,
-    const std::string& symbol,
-    const std::string& cusip,
-    const std::string& date_type) const {
+    const std::vector<std::string>& ca_types, const std::string& since, const std::string& until,
+    const std::string& symbol, const std::string& cusip, const std::string& date_type) const {
     std::vector<Announcement> announcements;
 
     std::string query_string;
@@ -1317,27 +1239,32 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
     }
 
     if (!since.empty()) {
-        if (!query_string.empty()) query_string += "&";
+        if (!query_string.empty())
+            query_string += "&";
         query_string += "since=" + since;
     }
 
     if (!until.empty()) {
-        if (!query_string.empty()) query_string += "&";
+        if (!query_string.empty())
+            query_string += "&";
         query_string += "until=" + until;
     }
 
     if (!symbol.empty()) {
-        if (!query_string.empty()) query_string += "&";
+        if (!query_string.empty())
+            query_string += "&";
         query_string += "symbol=" + symbol;
     }
 
     if (!cusip.empty()) {
-        if (!query_string.empty()) query_string += "&";
+        if (!query_string.empty())
+            query_string += "&";
         query_string += "cusip=" + cusip;
     }
 
     if (!date_type.empty()) {
-        if (!query_string.empty()) query_string += "&";
+        if (!query_string.empty())
+            query_string += "&";
         query_string += "date_type=" + date_type;
     }
 
@@ -1360,25 +1287,15 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
         return std::make_pair(Status(1, ss.str()), announcements);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing announcements JSON"), announcements);
     }
-
-    if (!d.IsArray()) {
+    if (!root.is_array()) {
         return std::make_pair(Status(1, "Expected array of announcements"), announcements);
     }
-
-    for (auto& o : d.GetArray()) {
-        Announcement announcement;
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        o.Accept(writer);
-        if (Status status = announcement.fromJSON(s.GetString()); !status.ok()) {
-            return std::make_pair(status, announcements);
-        }
-        announcements.push_back(announcement);
+    if (Status s = walkArrayInto(root, announcements); !s.ok()) {
+        return std::make_pair(s, announcements);
     }
 
     return std::make_pair(Status(), announcements);
@@ -1409,18 +1326,10 @@ std::pair<Status, Announcement> Client::getAnnouncement(const std::string& id) c
 // ==================== Options ====================
 
 std::pair<Status, OptionContracts> Client::getOptionContracts(
-    const std::string& underlying_symbols,
-    const std::string& status,
-    const std::string& expiration_date,
-    const std::string& expiration_date_gte,
-    const std::string& expiration_date_lte,
-    const std::string& root_symbol,
-    const std::string& type,
-    const std::string& style,
-    const std::string& strike_price_gte,
-    const std::string& strike_price_lte,
-    unsigned int limit,
-    const std::string& page_token) const {
+    const std::string& underlying_symbols, const std::string& status, const std::string& expiration_date,
+    const std::string& expiration_date_gte, const std::string& expiration_date_lte, const std::string& root_symbol,
+    const std::string& type, const std::string& style, const std::string& strike_price_gte,
+    const std::string& strike_price_lte, unsigned int limit, const std::string& page_token) const {
     OptionContracts contracts;
 
     httplib::Params params;
@@ -1557,23 +1466,18 @@ std::pair<Status, std::map<std::string, Snapshot>> Client::getSnapshots(const st
         return std::make_pair(Status(1, ss.str()), snapshots);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    // Response is object keyed by symbol (no "snapshots" wrapper here).
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing snapshots JSON"), snapshots);
     }
-
-    // Response is object keyed by symbol
-    if (d.IsObject()) {
-        for (auto& m : d.GetObject()) {
+    if (root.is_object()) {
+        for (const auto& [sym, val] : root.get_object()) {
             Snapshot snapshot;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = snapshot.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, snapshots);
+            if (Status s = snapshot.fromJSON(json_detail::write(val)); !s.ok()) {
+                return std::make_pair(s, snapshots);
             }
-            snapshots[m.name.GetString()] = snapshot;
+            snapshots[sym] = std::move(snapshot);
         }
     }
 
@@ -1601,17 +1505,12 @@ std::pair<Status, Bar> Client::getLatestBar(const std::string& symbol) const {
         return std::make_pair(Status(1, ss.str()), bar);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest bar JSON"), bar);
     }
-
-    if (d.HasMember("bar") && d["bar"].IsObject()) {
-        rapidjson::StringBuffer s;
-        s.Clear();
-        rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-        d["bar"].Accept(writer);
-        return std::make_pair(bar.fromJSON(s.GetString()), bar);
+    if (std::optional<std::string> sub = extractSubObjectJson(root, "bar"); sub.has_value()) {
+        return std::make_pair(bar.fromJSON(*sub), bar);
     }
 
     return std::make_pair(Status(1, "Response missing 'bar' field"), bar);
@@ -1644,23 +1543,12 @@ std::pair<Status, std::map<std::string, Bar>> Client::getLatestBars(const std::v
         return std::make_pair(Status(1, ss.str()), bars);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest bars JSON"), bars);
     }
-
-    if (d.HasMember("bars") && d["bars"].IsObject()) {
-        for (auto& m : d["bars"].GetObject()) {
-            Bar bar;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = bar.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, bars);
-            }
-            bars[m.name.GetString()] = bar;
-        }
+    if (Status s = walkObjectIntoMap(root, "bars", bars); !s.ok()) {
+        return std::make_pair(s, bars);
     }
 
     return std::make_pair(Status(), bars);
@@ -1668,12 +1556,11 @@ std::pair<Status, std::map<std::string, Bar>> Client::getLatestBars(const std::v
 
 // ==================== Market Data - Historical Trades/Quotes ====================
 
-std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(
-    const std::string& symbol,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(const std::string& symbol,
+                                                                                const std::string& start,
+                                                                                const std::string& end,
+                                                                                unsigned int limit,
+                                                                                const std::string& page_token) const {
     std::vector<Trade> trades;
     std::string next_page_token;
 
@@ -1711,39 +1598,24 @@ std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(
         return std::make_pair(Status(1, ss.str()), std::make_pair(trades, next_page_token));
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
-        return std::make_pair(Status(1, "Received parse error when deserializing trades JSON"), 
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+        return std::make_pair(Status(1, "Received parse error when deserializing trades JSON"),
                               std::make_pair(trades, next_page_token));
     }
-
-    if (d.HasMember("trades") && d["trades"].IsArray()) {
-        for (auto& o : d["trades"].GetArray()) {
-            Trade trade;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            o.Accept(writer);
-            if (Status status = trade.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, std::make_pair(trades, next_page_token));
-            }
-            trades.push_back(trade);
-        }
+    if (Status s = walkArrayInto(root, "trades", trades); !s.ok()) {
+        return std::make_pair(s, std::make_pair(trades, next_page_token));
     }
-
-    if (d.HasMember("next_page_token") && d["next_page_token"].IsString()) {
-        next_page_token = d["next_page_token"].GetString();
-    }
+    extractStringField(root, "next_page_token", next_page_token);
 
     return std::make_pair(Status(), std::make_pair(trades, next_page_token));
 }
 
-std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(
-    const std::string& symbol,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(const std::string& symbol,
+                                                                                const std::string& start,
+                                                                                const std::string& end,
+                                                                                unsigned int limit,
+                                                                                const std::string& page_token) const {
     std::vector<Quote> quotes;
     std::string next_page_token;
 
@@ -1781,41 +1653,24 @@ std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(
         return std::make_pair(Status(1, ss.str()), std::make_pair(quotes, next_page_token));
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing quotes JSON"),
                               std::make_pair(quotes, next_page_token));
     }
-
-    if (d.HasMember("quotes") && d["quotes"].IsArray()) {
-        for (auto& o : d["quotes"].GetArray()) {
-            Quote quote;
-            rapidjson::StringBuffer s;
-            s.Clear();
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            o.Accept(writer);
-            if (Status status = quote.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, std::make_pair(quotes, next_page_token));
-            }
-            quotes.push_back(quote);
-        }
+    if (Status s = walkArrayInto(root, "quotes", quotes); !s.ok()) {
+        return std::make_pair(s, std::make_pair(quotes, next_page_token));
     }
-
-    if (d.HasMember("next_page_token") && d["next_page_token"].IsString()) {
-        next_page_token = d["next_page_token"].GetString();
-    }
+    extractStringField(root, "next_page_token", next_page_token);
 
     return std::make_pair(Status(), std::make_pair(quotes, next_page_token));
 }
 
 // ==================== Market Data - Multi-Symbol Historical ====================
 
-std::pair<Status, MultiTrades> Client::getMultiTrades(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, MultiTrades> Client::getMultiTrades(const std::vector<std::string>& symbols, const std::string& start,
+                                                      const std::string& end, unsigned int limit,
+                                                      const std::string& page_token) const {
     MultiTrades multi_trades;
 
     std::string symbols_string;
@@ -1860,12 +1715,9 @@ std::pair<Status, MultiTrades> Client::getMultiTrades(
     return std::make_pair(multi_trades.fromJSON(resp->body), multi_trades);
 }
 
-std::pair<Status, MultiQuotes> Client::getMultiQuotes(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, MultiQuotes> Client::getMultiQuotes(const std::vector<std::string>& symbols, const std::string& start,
+                                                      const std::string& end, unsigned int limit,
+                                                      const std::string& page_token) const {
     MultiQuotes multi_quotes;
 
     std::string symbols_string;
@@ -1912,12 +1764,9 @@ std::pair<Status, MultiQuotes> Client::getMultiQuotes(
 
 // ==================== Market Data - Auctions ====================
 
-std::pair<Status, Auctions> Client::getAuctions(
-    const std::string& symbol,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, Auctions> Client::getAuctions(const std::string& symbol, const std::string& start,
+                                                const std::string& end, unsigned int limit,
+                                                const std::string& page_token) const {
     Auctions auctions;
 
     httplib::Params params;
@@ -1957,12 +1806,9 @@ std::pair<Status, Auctions> Client::getAuctions(
     return std::make_pair(auctions.fromJSON(resp->body), auctions);
 }
 
-std::pair<Status, Auctions> Client::getMultiAuctions(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, Auctions> Client::getMultiAuctions(const std::vector<std::string>& symbols, const std::string& start,
+                                                     const std::string& end, unsigned int limit,
+                                                     const std::string& page_token) const {
     Auctions auctions;
 
     std::string symbols_string;
@@ -2009,13 +1855,11 @@ std::pair<Status, Auctions> Client::getMultiAuctions(
 
 // ==================== Market Data - Corporate Actions ====================
 
-std::pair<Status, CorporateActions> Client::getCorporateActions(
-    const std::vector<std::string>& symbols,
-    const std::vector<std::string>& types,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token) const {
+std::pair<Status, CorporateActions> Client::getCorporateActions(const std::vector<std::string>& symbols,
+                                                                const std::vector<std::string>& types,
+                                                                const std::string& start, const std::string& end,
+                                                                unsigned int limit,
+                                                                const std::string& page_token) const {
     CorporateActions corporate_actions;
 
     httplib::Params params;
@@ -2077,14 +1921,10 @@ std::pair<Status, CorporateActions> Client::getCorporateActions(
 
 // ==================== News API ====================
 
-std::pair<Status, NewsArticles> Client::getNews(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token,
-    bool include_content,
-    bool exclude_contentless) const {
+std::pair<Status, NewsArticles> Client::getNews(const std::vector<std::string>& symbols, const std::string& start,
+                                                const std::string& end, unsigned int limit,
+                                                const std::string& page_token, bool include_content,
+                                                bool exclude_contentless) const {
     NewsArticles news_articles;
 
     httplib::Params params;
@@ -2147,11 +1987,34 @@ std::string makeCryptoUrl(const std::string& path, CryptoFeed feed) {
     std::string feed_str = (feed == CryptoFeed::Global) ? "global" : "us";
     return "/v1beta3/crypto/" + feed_str + path;
 }
+
+// Walk a {"<key>": {"<symbol>": <obj>}} response, pulling the single-symbol
+// payload out into target_model.
+template <class T>
+Status extractSymbolFromObjectMap(const std::string& body, const std::string& outer_key, const std::string& symbol,
+                                  T& target_model, const std::string& not_found_msg) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, body); ec) {
+        return Status(1, "Received parse error when deserializing " + outer_key + " JSON");
+    }
+    if (!root.is_object()) {
+        return Status(1, not_found_msg);
+    }
+    const glz::generic::object_t& root_obj = root.get_object();
+    glz::generic::object_t::const_iterator outer_it = root_obj.find(outer_key);
+    if (outer_it == root_obj.end() || !outer_it->second.is_object()) {
+        return Status(1, not_found_msg);
+    }
+    const glz::generic::object_t& outer = outer_it->second.get_object();
+    glz::generic::object_t::const_iterator sym_it = outer.find(symbol);
+    if (sym_it == outer.end() || !sym_it->second.is_object()) {
+        return Status(1, not_found_msg);
+    }
+    return target_model.fromJSON(json_detail::write(sym_it->second));
+}
 }  // namespace
 
-std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(
-    const std::string& symbol,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(const std::string& symbol, CryptoFeed feed) const {
     CryptoTrade trade;
 
     std::string url = makeCryptoUrl("/latest/trades?symbols=" + symbol, feed);
@@ -2170,27 +2033,12 @@ std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(
         return std::make_pair(Status(1, ss.str()), trade);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
-        return std::make_pair(Status(1, "Received parse error when deserializing crypto trade JSON"), trade);
-    }
-
-    if (d.HasMember("trades") && d["trades"].IsObject()) {
-        auto& trades_obj = d["trades"];
-        if (trades_obj.HasMember(symbol.c_str()) && trades_obj[symbol.c_str()].IsObject()) {
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            trades_obj[symbol.c_str()].Accept(writer);
-            return std::make_pair(trade.fromJSON(s.GetString()), trade);
-        }
-    }
-
-    return std::make_pair(Status(1, "Trade not found for symbol"), trade);
+    Status s = extractSymbolFromObjectMap(resp->body, "trades", symbol, trade, "Trade not found for symbol");
+    return std::make_pair(s, trade);
 }
 
 std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTrades(
-    const std::vector<std::string>& symbols,
-    CryptoFeed feed) const {
+    const std::vector<std::string>& symbols, CryptoFeed feed) const {
     std::map<std::string, CryptoTrade> trades;
 
     std::string symbols_string;
@@ -2217,30 +2065,18 @@ std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTra
         return std::make_pair(Status(1, ss.str()), trades);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto trades JSON"), trades);
     }
-
-    if (d.HasMember("trades") && d["trades"].IsObject()) {
-        for (auto& m : d["trades"].GetObject()) {
-            CryptoTrade trade;
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = trade.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, trades);
-            }
-            trades[m.name.GetString()] = trade;
-        }
+    if (Status s = walkObjectIntoMap(root, "trades", trades); !s.ok()) {
+        return std::make_pair(s, trades);
     }
 
     return std::make_pair(Status(), trades);
 }
 
-std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(
-    const std::string& symbol,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(const std::string& symbol, CryptoFeed feed) const {
     CryptoQuote quote;
 
     std::string url = makeCryptoUrl("/latest/quotes?symbols=" + symbol, feed);
@@ -2259,27 +2095,12 @@ std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(
         return std::make_pair(Status(1, ss.str()), quote);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
-        return std::make_pair(Status(1, "Received parse error when deserializing crypto quote JSON"), quote);
-    }
-
-    if (d.HasMember("quotes") && d["quotes"].IsObject()) {
-        auto& quotes_obj = d["quotes"];
-        if (quotes_obj.HasMember(symbol.c_str()) && quotes_obj[symbol.c_str()].IsObject()) {
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            quotes_obj[symbol.c_str()].Accept(writer);
-            return std::make_pair(quote.fromJSON(s.GetString()), quote);
-        }
-    }
-
-    return std::make_pair(Status(1, "Quote not found for symbol"), quote);
+    Status s = extractSymbolFromObjectMap(resp->body, "quotes", symbol, quote, "Quote not found for symbol");
+    return std::make_pair(s, quote);
 }
 
 std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuotes(
-    const std::vector<std::string>& symbols,
-    CryptoFeed feed) const {
+    const std::vector<std::string>& symbols, CryptoFeed feed) const {
     std::map<std::string, CryptoQuote> quotes;
 
     std::string symbols_string;
@@ -2306,30 +2127,18 @@ std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuo
         return std::make_pair(Status(1, ss.str()), quotes);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto quotes JSON"), quotes);
     }
-
-    if (d.HasMember("quotes") && d["quotes"].IsObject()) {
-        for (auto& m : d["quotes"].GetObject()) {
-            CryptoQuote quote;
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = quote.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, quotes);
-            }
-            quotes[m.name.GetString()] = quote;
-        }
+    if (Status s = walkObjectIntoMap(root, "quotes", quotes); !s.ok()) {
+        return std::make_pair(s, quotes);
     }
 
     return std::make_pair(Status(), quotes);
 }
 
-std::pair<Status, CryptoBar> Client::getLatestCryptoBar(
-    const std::string& symbol,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoBar> Client::getLatestCryptoBar(const std::string& symbol, CryptoFeed feed) const {
     CryptoBar bar;
 
     std::string url = makeCryptoUrl("/latest/bars?symbols=" + symbol, feed);
@@ -2348,27 +2157,12 @@ std::pair<Status, CryptoBar> Client::getLatestCryptoBar(
         return std::make_pair(Status(1, ss.str()), bar);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
-        return std::make_pair(Status(1, "Received parse error when deserializing crypto bar JSON"), bar);
-    }
-
-    if (d.HasMember("bars") && d["bars"].IsObject()) {
-        auto& bars_obj = d["bars"];
-        if (bars_obj.HasMember(symbol.c_str()) && bars_obj[symbol.c_str()].IsObject()) {
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            bars_obj[symbol.c_str()].Accept(writer);
-            return std::make_pair(bar.fromJSON(s.GetString()), bar);
-        }
-    }
-
-    return std::make_pair(Status(1, "Bar not found for symbol"), bar);
+    Status s = extractSymbolFromObjectMap(resp->body, "bars", symbol, bar, "Bar not found for symbol");
+    return std::make_pair(s, bar);
 }
 
-std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
-    const std::vector<std::string>& symbols,
-    CryptoFeed feed) const {
+std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(const std::vector<std::string>& symbols,
+                                                                                CryptoFeed feed) const {
     std::map<std::string, CryptoBar> bars;
 
     std::string symbols_string;
@@ -2395,30 +2189,18 @@ std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
         return std::make_pair(Status(1, ss.str()), bars);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto bars JSON"), bars);
     }
-
-    if (d.HasMember("bars") && d["bars"].IsObject()) {
-        for (auto& m : d["bars"].GetObject()) {
-            CryptoBar bar;
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = bar.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, bars);
-            }
-            bars[m.name.GetString()] = bar;
-        }
+    if (Status s = walkObjectIntoMap(root, "bars", bars); !s.ok()) {
+        return std::make_pair(s, bars);
     }
 
     return std::make_pair(Status(), bars);
 }
 
-std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(
-    const std::string& symbol,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(const std::string& symbol, CryptoFeed feed) const {
     CryptoSnapshot snapshot;
 
     std::string url = makeCryptoUrl("/snapshots?symbols=" + symbol, feed);
@@ -2437,27 +2219,12 @@ std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(
         return std::make_pair(Status(1, ss.str()), snapshot);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
-        return std::make_pair(Status(1, "Received parse error when deserializing crypto snapshot JSON"), snapshot);
-    }
-
-    if (d.HasMember("snapshots") && d["snapshots"].IsObject()) {
-        auto& snapshots_obj = d["snapshots"];
-        if (snapshots_obj.HasMember(symbol.c_str()) && snapshots_obj[symbol.c_str()].IsObject()) {
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            snapshots_obj[symbol.c_str()].Accept(writer);
-            return std::make_pair(snapshot.fromJSON(s.GetString()), snapshot);
-        }
-    }
-
-    return std::make_pair(Status(1, "Snapshot not found for symbol"), snapshot);
+    Status s = extractSymbolFromObjectMap(resp->body, "snapshots", symbol, snapshot, "Snapshot not found for symbol");
+    return std::make_pair(s, snapshot);
 }
 
 std::pair<Status, std::map<std::string, CryptoSnapshot>> Client::getCryptoSnapshots(
-    const std::vector<std::string>& symbols,
-    CryptoFeed feed) const {
+    const std::vector<std::string>& symbols, CryptoFeed feed) const {
     std::map<std::string, CryptoSnapshot> snapshots;
 
     std::string symbols_string;
@@ -2484,35 +2251,21 @@ std::pair<Status, std::map<std::string, CryptoSnapshot>> Client::getCryptoSnapsh
         return std::make_pair(Status(1, ss.str()), snapshots);
     }
 
-    rapidjson::Document d;
-    if (d.Parse(resp->body.c_str()).HasParseError()) {
+    glz::generic root{};
+    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto snapshots JSON"), snapshots);
     }
-
-    if (d.HasMember("snapshots") && d["snapshots"].IsObject()) {
-        for (auto& m : d["snapshots"].GetObject()) {
-            CryptoSnapshot snapshot;
-            rapidjson::StringBuffer s;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(s);
-            m.value.Accept(writer);
-            if (Status status = snapshot.fromJSON(s.GetString()); !status.ok()) {
-                return std::make_pair(status, snapshots);
-            }
-            snapshots[m.name.GetString()] = snapshot;
-        }
+    if (Status s = walkObjectIntoMap(root, "snapshots", snapshots); !s.ok()) {
+        return std::make_pair(s, snapshots);
     }
 
     return std::make_pair(Status(), snapshots);
 }
 
-std::pair<Status, CryptoBars> Client::getCryptoBars(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    const std::string& timeframe,
-    unsigned int limit,
-    const std::string& page_token,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoBars> Client::getCryptoBars(const std::vector<std::string>& symbols, const std::string& start,
+                                                    const std::string& end, const std::string& timeframe,
+                                                    unsigned int limit, const std::string& page_token,
+                                                    CryptoFeed feed) const {
     CryptoBars crypto_bars;
 
     std::string symbols_string;
@@ -2557,13 +2310,10 @@ std::pair<Status, CryptoBars> Client::getCryptoBars(
     return std::make_pair(crypto_bars.fromJSON(resp->body), crypto_bars);
 }
 
-std::pair<Status, CryptoTrades> Client::getCryptoTrades(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoTrades> Client::getCryptoTrades(const std::vector<std::string>& symbols,
+                                                        const std::string& start, const std::string& end,
+                                                        unsigned int limit, const std::string& page_token,
+                                                        CryptoFeed feed) const {
     CryptoTrades crypto_trades;
 
     std::string symbols_string;
@@ -2608,13 +2358,10 @@ std::pair<Status, CryptoTrades> Client::getCryptoTrades(
     return std::make_pair(crypto_trades.fromJSON(resp->body), crypto_trades);
 }
 
-std::pair<Status, CryptoQuotes> Client::getCryptoQuotes(
-    const std::vector<std::string>& symbols,
-    const std::string& start,
-    const std::string& end,
-    unsigned int limit,
-    const std::string& page_token,
-    CryptoFeed feed) const {
+std::pair<Status, CryptoQuotes> Client::getCryptoQuotes(const std::vector<std::string>& symbols,
+                                                        const std::string& start, const std::string& end,
+                                                        unsigned int limit, const std::string& page_token,
+                                                        CryptoFeed feed) const {
     CryptoQuotes crypto_quotes;
 
     std::string symbols_string;
