@@ -34,4 +34,4 @@ make smart-build        # Diff-aware rebuild (tracks .build_sha)
 
 ## CI
 
-GitHub Actions workflow `.github/workflows/ci.yml`: build on Ubuntu 24.04 + macos-latest, lint via clang-format and markdown-lint. macOS Test step disabled (`if: false`) pending linker-error root-cause. Release workflow auto-creates a GitHub Release on `vX.Y.Z` tag push (notes extracted from `CHANGELOG.md`). Default branch is `main` (migrated 2026-04-30 from `master` for sibling-repo consistency).
+GitHub Actions workflow `.github/workflows/ci.yml`: build on Ubuntu 24.04 + macos-latest + windows-latest, lint via clang-format and markdown-lint. macOS Test step disabled (`if: false`) pending linker-error root-cause. Release workflow auto-creates a GitHub Release on `vX.Y.Z` tag push (notes extracted from `CHANGELOG.md`). Default branch is `main` (migrated 2026-04-30 from `master` for sibling-repo consistency).
