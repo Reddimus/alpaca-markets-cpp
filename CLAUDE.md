@@ -27,7 +27,7 @@ make smart-build        # Diff-aware rebuild (tracks .build_sha)
 
 ## Conventions
 
-- Code style: `.clang-format` (LLVM base, tabs, 100 cols)
+- Code style: `.clang-format` (Google base, **4-space indent**, **120 cols**). Note: this differs from the sibling SDKs (kalshi-cpp/polymarket-cpp/open-meteo-cpp/nws-cpp/ncei-cpp use tabs + 100 cols) — kept on Google/spaces because the upstream marpaia fork shipped that style and rewriting all files would be churn without functional benefit.
 - Namespace: `alpaca::markets`
 - **No `auto`** for local declarations — explicit types preferred (consistent with sibling SDKs).
 - Examples in `examples/`: `view_account_info.cpp`, `check_market_status.cpp`, `get_latest_quote.cpp`. Built as plain binaries (no `example_` prefix), no `run-*` Makefile targets — invoke `./build/examples/<name>` directly.
