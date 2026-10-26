@@ -40,6 +40,7 @@
 #include <cmath>
 #include <cstdio>
 #include <string>
+#include <string_view>
 
 namespace {
 
@@ -86,7 +87,7 @@ std::string make_payload() {
 
 }  // namespace
 
-int main(int argc, char**) {
+int main(int argc, char** argv) {
     const std::string payload = make_payload();
     constexpr int kIterations = 1000;
 
@@ -137,7 +138,7 @@ int main(int argc, char**) {
     // string_view and parse directly via glz::meta<Bar> (no per-element
     // re-serialise), the cap can drop to ~200 us/op.
     constexpr double kMaxUsPerOp = 1500.0;
-    if (argc == 1 && us_per_op > kMaxUsPerOp) {
+    if (!(argc == 2 && std::string_view(argv[1]) == "--no-timing") && us_per_op > kMaxUsPerOp) {
         std::fprintf(stderr, "REGRESSION: %.3f us/op exceeds cap of %.0f us/op\n", us_per_op, kMaxUsPerOp);
         return 1;
     }

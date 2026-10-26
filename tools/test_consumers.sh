@@ -19,7 +19,7 @@ for dependency in glaze gtest gmock httplib.h; do
 done
 cmake -S "$source_dir/tests/consumer" -B "$scratch_dir/package" \
     -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$scratch_dir/prefix" \
-    -DREADME_EXAMPLES_DIR="$scratch_dir/readme"
+    -DREADME_EXAMPLES_DIR="$scratch_dir/readme" "$@"
 cmake --build "$scratch_dir/package" --parallel 4
 "$scratch_dir/package/consumer"
 cmake -S "$source_dir/tests/consumer" -B "$scratch_dir/fetch" \

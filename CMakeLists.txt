@@ -185,6 +185,10 @@ endif()
 # Enable OpenSSL support in cpp-httplib
 target_compile_definitions(alpaca_markets PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
 
+if(ALPACA_MARKETS_ENABLE_SANITIZERS AND NOT MSVC)
+    target_link_options(alpaca_markets INTERFACE -fsanitize=address,undefined)
+endif()
+
 # Create alias for namespaced usage
 add_library(alpaca::markets ALIAS alpaca_markets)
 set_target_properties(alpaca_markets PROPERTIES EXPORT_NAME markets)

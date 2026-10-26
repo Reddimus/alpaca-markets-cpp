@@ -234,9 +234,8 @@ std::pair<Status, AccountConfigurations> Client::getAccountConfigurations() cons
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/account/configurations returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), account_configurations);
+        return std::make_pair(makeErrorStatus("/v2/account/configurations", resp->status, resp->body),
+                              account_configurations);
     }
 
     return std::make_pair(account_configurations.fromJSON(resp->body), account_configurations);
@@ -269,9 +268,8 @@ std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(boo
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/account/configurations returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), account_configurations);
+        return std::make_pair(makeErrorStatus("/v2/account/configurations", resp->status, resp->body),
+                              account_configurations);
     }
 
     return std::make_pair(account_configurations.fromJSON(resp->body), account_configurations);
@@ -301,9 +299,7 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), activities);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), activities);
     }
 
     // Activities is an array of mixed-typed records discriminated by the
@@ -366,9 +362,7 @@ std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) co
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -388,9 +382,7 @@ std::pair<Status, Order> Client::getOrderByClientOrderID(const std::string& clie
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -426,9 +418,7 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), orders);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), orders);
     }
 
     glz::generic_u64 root{};
@@ -511,9 +501,7 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/orders returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus("/v2/orders", resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -551,9 +539,7 @@ std::pair<Status, Order> Client::submitNotionalOrder(const std::string& symbol, 
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/orders returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus("/v2/orders", resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -591,9 +577,7 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -609,9 +593,7 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
     }
 
     if (resp->status != 200 && resp->status != 207) {
-        std::ostringstream ss;
-        ss << "Call to /v2/orders returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), orders);
+        return std::make_pair(makeErrorStatus("/v2/orders", resp->status, resp->body), orders);
     }
 
     glz::generic_u64 root{};
@@ -642,9 +624,7 @@ std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), order);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), order);
     }
 
     return std::make_pair(order.fromJSON(resp->body), order);
@@ -662,9 +642,7 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/positions returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), positions);
+        return std::make_pair(makeErrorStatus("/v2/positions", resp->status, resp->body), positions);
     }
 
     glz::generic_u64 root{};
@@ -692,9 +670,7 @@ std::pair<Status, Position> Client::getPosition(const std::string& symbol) const
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), position);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), position);
     }
 
     return std::make_pair(position.fromJSON(resp->body), position);
@@ -710,9 +686,7 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
     }
 
     if (resp->status != 200 && resp->status != 207) {
-        std::ostringstream ss;
-        ss << "Call to /v2/positions returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), positions);
+        return std::make_pair(makeErrorStatus("/v2/positions", resp->status, resp->body), positions);
     }
 
     glz::generic_u64 root{};
@@ -743,9 +717,7 @@ std::pair<Status, Position> Client::closePosition(const std::string& symbol) con
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), position);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), position);
     }
 
     return std::make_pair(position.fromJSON(resp->body), position);
@@ -772,9 +744,7 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), assets);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), assets);
     }
 
     glz::generic_u64 root{};
@@ -802,9 +772,7 @@ std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), asset);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), asset);
     }
 
     return std::make_pair(asset.fromJSON(resp->body), asset);
@@ -822,9 +790,7 @@ std::pair<Status, Clock> Client::getClock() const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/clock returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), clock);
+        return std::make_pair(makeErrorStatus("/v2/clock", resp->status, resp->body), clock);
     }
 
     return std::make_pair(clock.fromJSON(resp->body), clock);
@@ -843,9 +809,7 @@ std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& star
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), dates);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), dates);
     }
 
     glz::generic_u64 root{};
@@ -871,9 +835,7 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/watchlists returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), watchlists);
+        return std::make_pair(makeErrorStatus("/v2/watchlists", resp->status, resp->body), watchlists);
     }
 
     glz::generic_u64 root{};
@@ -900,9 +862,7 @@ std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), watchlist);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), watchlist);
     }
 
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
@@ -939,9 +899,7 @@ std::pair<Status, Watchlist> Client::createWatchlist(const std::string& name,
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << "Call to /v2/watchlists returned an HTTP " << resp->status << ": " << resp->body;
-        return std::make_pair(Status(1, ss.str()), watchlist);
+        return std::make_pair(makeErrorStatus("/v2/watchlists", resp->status, resp->body), watchlist);
     }
 
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
@@ -963,9 +921,7 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), watchlist);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), watchlist);
     }
 
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
@@ -982,9 +938,7 @@ Status Client::deleteWatchlist(const std::string& id) const {
     }
 
     if (resp->status != 200 && resp->status != 204) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return Status(1, ss.str());
+        return makeErrorStatus(url, resp->status, resp->body);
     }
     return Status();
 }
@@ -1007,9 +961,7 @@ std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id,
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), watchlist);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), watchlist);
     }
 
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
@@ -1028,9 +980,7 @@ std::pair<Status, Watchlist> Client::removeSymbolFromWatchlist(const std::string
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), watchlist);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), watchlist);
     }
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
 }
@@ -1086,9 +1036,7 @@ std::pair<Status, PortfolioHistory> Client::getPortfolioHistory(const std::strin
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), portfolio_history);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), portfolio_history);
     }
 
     return std::make_pair(portfolio_history.fromJSON(resp->body), portfolio_history);
@@ -1137,9 +1085,7 @@ std::pair<Status, Bars> Client::getBars(const std::vector<std::string>& symbols,
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), bars);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), bars);
     }
 
     return std::make_pair(bars.fromJSON(resp->body), bars);
@@ -1160,9 +1106,7 @@ std::pair<Status, LatestTrade> Client::getLatestTrade(const std::string& symbol)
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), latest_trade);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), latest_trade);
     }
 
     return std::make_pair(latest_trade.fromJSON(resp->body), latest_trade);
@@ -1183,9 +1127,7 @@ std::pair<Status, LatestQuote> Client::getLatestQuote(const std::string& symbol)
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), latest_quote);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), latest_quote);
     }
 
     return std::make_pair(latest_quote.fromJSON(resp->body), latest_quote);
@@ -1213,9 +1155,7 @@ std::pair<Status, std::map<std::string, Trade>> Client::getLatestTrades(const st
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), trades);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), trades);
     }
 
     glz::generic_u64 root{};
@@ -1251,9 +1191,7 @@ std::pair<Status, std::map<std::string, Quote>> Client::getLatestQuotes(const st
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), quotes);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), quotes);
     }
 
     glz::generic_u64 root{};
@@ -1331,9 +1269,7 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), announcements);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), announcements);
     }
 
     glz::generic_u64 root{};
@@ -1364,9 +1300,7 @@ std::pair<Status, Announcement> Client::getAnnouncement(const std::string& id) c
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), announcement);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), announcement);
     }
 
     return std::make_pair(announcement.fromJSON(resp->body), announcement);
@@ -1434,9 +1368,7 @@ std::pair<Status, OptionContracts> Client::getOptionContracts(
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), contracts);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), contracts);
     }
 
     return std::make_pair(contracts.fromJSON(resp->body), contracts);
@@ -1456,9 +1388,7 @@ std::pair<Status, OptionContract> Client::getOptionContract(const std::string& s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), contract);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), contract);
     }
 
     return std::make_pair(contract.fromJSON(resp->body), contract);
@@ -1480,9 +1410,7 @@ std::pair<Status, Snapshot> Client::getSnapshot(const std::string& symbol) const
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), snapshot);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), snapshot);
     }
 
     return std::make_pair(snapshot.fromJSON(resp->body), snapshot);
@@ -1510,9 +1438,7 @@ std::pair<Status, std::map<std::string, Snapshot>> Client::getSnapshots(const st
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), snapshots);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), snapshots);
     }
 
     // Response is object keyed by symbol (no "snapshots" wrapper here).
@@ -1549,9 +1475,7 @@ std::pair<Status, Bar> Client::getLatestBar(const std::string& symbol) const {
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), bar);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), bar);
     }
 
     glz::generic_u64 root{};
@@ -1587,9 +1511,7 @@ std::pair<Status, std::map<std::string, Bar>> Client::getLatestBars(const std::v
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), bars);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), bars);
     }
 
     glz::generic_u64 root{};
@@ -1642,9 +1564,7 @@ std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), std::make_pair(trades, next_page_token));
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), std::make_pair(trades, next_page_token));
     }
 
     glz::generic_u64 root{};
@@ -1697,9 +1617,7 @@ std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), std::make_pair(quotes, next_page_token));
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), std::make_pair(quotes, next_page_token));
     }
 
     glz::generic_u64 root{};
@@ -1756,9 +1674,7 @@ std::pair<Status, MultiTrades> Client::getMultiTrades(const std::vector<std::str
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), multi_trades);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), multi_trades);
     }
 
     return std::make_pair(multi_trades.fromJSON(resp->body), multi_trades);
@@ -1803,9 +1719,7 @@ std::pair<Status, MultiQuotes> Client::getMultiQuotes(const std::vector<std::str
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), multi_quotes);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), multi_quotes);
     }
 
     return std::make_pair(multi_quotes.fromJSON(resp->body), multi_quotes);
@@ -1847,9 +1761,7 @@ std::pair<Status, Auctions> Client::getAuctions(const std::string& symbol, const
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), auctions);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), auctions);
     }
 
     return std::make_pair(auctions.fromJSON(resp->body), auctions);
@@ -1894,9 +1806,7 @@ std::pair<Status, Auctions> Client::getMultiAuctions(const std::vector<std::stri
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), auctions);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), auctions);
     }
 
     return std::make_pair(auctions.fromJSON(resp->body), auctions);
@@ -1960,9 +1870,7 @@ std::pair<Status, CorporateActions> Client::getCorporateActions(const std::vecto
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), corporate_actions);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), corporate_actions);
     }
 
     return std::make_pair(corporate_actions.fromJSON(resp->body), corporate_actions);
@@ -2021,9 +1929,7 @@ std::pair<Status, NewsArticles> Client::getNews(const std::vector<std::string>& 
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), news_articles);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), news_articles);
     }
 
     return std::make_pair(news_articles.fromJSON(resp->body), news_articles);
@@ -2077,9 +1983,7 @@ std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(const std::string& s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), trade);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), trade);
     }
 
     Status s = extractSymbolFromObjectMap(resp->body, "trades", symbol, trade, "Trade not found for symbol");
@@ -2110,9 +2014,7 @@ std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTra
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), trades);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), trades);
     }
 
     glz::generic_u64 root{};
@@ -2140,9 +2042,7 @@ std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(const std::string& s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), quote);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), quote);
     }
 
     Status s = extractSymbolFromObjectMap(resp->body, "quotes", symbol, quote, "Quote not found for symbol");
@@ -2173,9 +2073,7 @@ std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuo
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), quotes);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), quotes);
     }
 
     glz::generic_u64 root{};
@@ -2203,9 +2101,7 @@ std::pair<Status, CryptoBar> Client::getLatestCryptoBar(const std::string& symbo
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), bar);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), bar);
     }
 
     Status s = extractSymbolFromObjectMap(resp->body, "bars", symbol, bar, "Bar not found for symbol");
@@ -2236,9 +2132,7 @@ std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), bars);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), bars);
     }
 
     glz::generic_u64 root{};
@@ -2266,9 +2160,7 @@ std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(const std::string& s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), snapshot);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), snapshot);
     }
 
     Status s = extractSymbolFromObjectMap(resp->body, "snapshots", symbol, snapshot, "Snapshot not found for symbol");
@@ -2299,9 +2191,7 @@ std::pair<Status, std::map<std::string, CryptoSnapshot>> Client::getCryptoSnapsh
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), snapshots);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), snapshots);
     }
 
     glz::generic_u64 root{};
@@ -2355,9 +2245,7 @@ std::pair<Status, CryptoBars> Client::getCryptoBars(const std::vector<std::strin
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), crypto_bars);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), crypto_bars);
     }
 
     return std::make_pair(crypto_bars.fromJSON(resp->body), crypto_bars);
@@ -2403,9 +2291,7 @@ std::pair<Status, CryptoTrades> Client::getCryptoTrades(const std::vector<std::s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), crypto_trades);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), crypto_trades);
     }
 
     return std::make_pair(crypto_trades.fromJSON(resp->body), crypto_trades);
@@ -2451,9 +2337,7 @@ std::pair<Status, CryptoQuotes> Client::getCryptoQuotes(const std::vector<std::s
     }
 
     if (resp->status != 200) {
-        std::ostringstream ss;
-        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
-        return std::make_pair(Status(1, ss.str()), crypto_quotes);
+        return std::make_pair(makeErrorStatus(url, resp->status, resp->body), crypto_quotes);
     }
 
     return std::make_pair(crypto_quotes.fromJSON(resp->body), crypto_quotes);
