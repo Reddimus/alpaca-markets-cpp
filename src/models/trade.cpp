@@ -9,7 +9,7 @@ Status Trade::fromJSON(const std::string& json) {
 
     // Market Data API v2 field names
     PARSE_DOUBLE(price, "p");               // price
-    PARSE_UINT64(size, "s");                // size
+    PARSE_DOUBLE(size, "s");                // size
     PARSE_STRING(exchange, "x");            // exchange
     PARSE_UINT64(id, "i");                  // trade ID
     PARSE_STRING(timestamp, "t");           // timestamp
@@ -25,7 +25,7 @@ Status LatestTrade::fromJSON(const std::string& json) {
     PARSE_STRING(symbol, "symbol");
 
     // v2 API: trade is under "trade" key
-    glz::generic::object_t::const_iterator trade_it = node.find("trade");
+    glz::generic_u64::object_t::const_iterator trade_it = node.find("trade");
     if (trade_it != node.end() && trade_it->second.is_object()) {
         if (Status status = trade.fromJSON(json_detail::write(trade_it->second)); !status.ok()) {
             return status;

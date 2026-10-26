@@ -9,7 +9,7 @@ namespace {
 // Helper to extract hostname from URL
 std::string extractHostname(const std::string& url) {
     std::string host = url;
-    
+
     // Remove scheme if present
     if (host.find("https://") == 0) {
         host = host.substr(8);
@@ -20,25 +20,26 @@ std::string extractHostname(const std::string& url) {
     } else if (host.find("ws://") == 0) {
         host = host.substr(5);
     }
-    
+
     // Remove path if present
     size_t pos = host.find('/');
     if (pos != std::string::npos) {
         host = host.substr(0, pos);
     }
-    
+
     // Remove port if present
     pos = host.find(':');
     if (pos != std::string::npos) {
         host = host.substr(0, pos);
     }
-    
+
     return host;
 }
 
 // Helper to ensure URL has scheme
 std::string ensureHttpsScheme(const std::string& url) {
-    if (url.empty()) return url;
+    if (url.empty())
+        return url;
     if (url.find("://") != std::string::npos) {
         return url;  // Already has scheme
     }

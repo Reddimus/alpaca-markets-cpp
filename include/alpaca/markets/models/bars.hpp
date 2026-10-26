@@ -11,7 +11,7 @@ namespace alpaca::markets {
 
 /**
  * @brief A type representing an Alpaca bar (OHLCV data).
- * 
+ *
  * Updated for Market Data API v2 response format.
  */
 class Bar {
@@ -26,12 +26,12 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    std::string timestamp;  // v2 uses ISO 8601 timestamp string "t"
+    std::string timestamp;     // v2 uses ISO 8601 timestamp string "t"
     double open_price = 0.0;   // "o"
     double high_price = 0.0;   // "h"
     double low_price = 0.0;    // "l"
     double close_price = 0.0;  // "c"
-    uint64_t volume = 0;       // "v"
+    double volume = 0.0;       // "v"
     uint64_t trade_count = 0;  // "n" (number of trades)
     double vwap = 0.0;         // "vw" (volume weighted average price)
 };

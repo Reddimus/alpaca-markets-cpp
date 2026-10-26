@@ -50,7 +50,7 @@ TEST(GlazeMigrationTest, BarsByMultiSymbolPayload) {
     ASSERT_EQ(bars.bars["AAPL"].size(), 2u);
     EXPECT_DOUBLE_EQ(bars.bars["AAPL"][0].open_price, 150.25);
     EXPECT_DOUBLE_EQ(bars.bars["AAPL"][1].close_price, 152.0);
-    EXPECT_EQ(bars.bars["AAPL"][0].volume, 1000000u);
+    EXPECT_DOUBLE_EQ(bars.bars["AAPL"][0].volume, 1000000.0);
     EXPECT_EQ(bars.bars["AAPL"][0].trade_count, 5000u);
     ASSERT_EQ(bars.bars["GOOG"].size(), 1u);
     EXPECT_DOUBLE_EQ(bars.bars["GOOG"][0].high_price, 2850.0);
@@ -112,7 +112,7 @@ TEST(GlazeMigrationTest, LatestQuoteNestedEnvelope) {
     ASSERT_TRUE(status.ok()) << status.getMessage();
     EXPECT_EQ(lq.symbol, "AAPL");
     EXPECT_DOUBLE_EQ(lq.quote.ask_price, 152.5);
-    EXPECT_EQ(lq.quote.ask_size, 100u);
+    EXPECT_DOUBLE_EQ(lq.quote.ask_size, 100.0);
     EXPECT_EQ(lq.quote.ask_exchange, "Q");
     EXPECT_DOUBLE_EQ(lq.quote.bid_price, 152.4);
     ASSERT_EQ(lq.quote.conditions.size(), 2u);
@@ -133,7 +133,7 @@ TEST(GlazeMigrationTest, LatestTradeNestedEnvelope) {
     ASSERT_TRUE(status.ok()) << status.getMessage();
     EXPECT_EQ(lt.symbol, "AAPL");
     EXPECT_DOUBLE_EQ(lt.trade.price, 151.75);
-    EXPECT_EQ(lt.trade.size, 100u);
+    EXPECT_DOUBLE_EQ(lt.trade.size, 100.0);
     EXPECT_EQ(lt.trade.id, 99999u);
     EXPECT_EQ(lt.trade.tape, "C");
 }
@@ -289,8 +289,8 @@ TEST(GlazeMigrationTest, StreamReplyAuthorization) {
 
 TEST(GlazeMigrationTest, StreamReplyTradeUpdateDataPassthrough) {
     using namespace stream;
-    auto [status, reply] = parseReply(
-        R"({"stream": "trade_updates", "data": {"event": "fill", "order": {"id": "ord-9"}}})");
+    auto [status, reply] =
+        parseReply(R"({"stream": "trade_updates", "data": {"event": "fill", "order": {"id": "ord-9"}}})");
     ASSERT_TRUE(status.ok()) << status.getMessage();
     EXPECT_EQ(reply.reply_type, ReplyType::Update);
     EXPECT_EQ(reply.stream_type, StreamType::TradeUpdates);

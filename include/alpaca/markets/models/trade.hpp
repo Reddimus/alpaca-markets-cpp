@@ -10,7 +10,7 @@ namespace alpaca::markets {
 
 /**
  * @brief A type representing a trade.
- * 
+ *
  * Updated for Market Data API v2 response format.
  */
 class Trade {
@@ -25,18 +25,18 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    double price = 0.0;           // "p"
-    uint64_t size = 0;            // "s"
-    std::string exchange;         // "x"
-    uint64_t id = 0;              // "i" - trade ID
-    std::string timestamp;        // "t" - ISO 8601
+    double price = 0.0;                   // "p"
+    double size = 0.0;                    // "s"
+    std::string exchange;                 // "x"
+    uint64_t id = 0;                      // "i" - trade ID
+    std::string timestamp;                // "t" - ISO 8601
     std::vector<std::string> conditions;  // "c" - trade conditions
-    std::string tape;             // "z" - tape (A, B, or C)
+    std::string tape;                     // "z" - tape (A, B, or C)
 };
 
 /**
  * @brief A type representing the latest trade for a certain symbol.
- * 
+ *
  * Updated for Market Data API v2 response format.
  */
 class LatestTrade {

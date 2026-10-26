@@ -59,33 +59,33 @@ TEST(SnapshotTest, FromJSON) {
 
     Snapshot snapshot;
     Status status = snapshot.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
-    
+
     // Verify latest trade
     EXPECT_EQ(snapshot.latest_trade.timestamp, "2024-01-10T15:30:00Z");
     EXPECT_DOUBLE_EQ(snapshot.latest_trade.price, 185.50);
-    EXPECT_EQ(snapshot.latest_trade.size, 100u);
+    EXPECT_DOUBLE_EQ(snapshot.latest_trade.size, 100.0);
     EXPECT_EQ(snapshot.latest_trade.exchange, "V");
-    
+
     // Verify latest quote
     EXPECT_EQ(snapshot.latest_quote.timestamp, "2024-01-10T15:30:01Z");
     EXPECT_DOUBLE_EQ(snapshot.latest_quote.ask_price, 185.55);
-    EXPECT_EQ(snapshot.latest_quote.ask_size, 500u);
+    EXPECT_DOUBLE_EQ(snapshot.latest_quote.ask_size, 500.0);
     EXPECT_DOUBLE_EQ(snapshot.latest_quote.bid_price, 185.45);
-    EXPECT_EQ(snapshot.latest_quote.bid_size, 300u);
-    
+    EXPECT_DOUBLE_EQ(snapshot.latest_quote.bid_size, 300.0);
+
     // Verify minute bar
     EXPECT_DOUBLE_EQ(snapshot.minute_bar.open_price, 185.00);
     EXPECT_DOUBLE_EQ(snapshot.minute_bar.high_price, 185.75);
     EXPECT_DOUBLE_EQ(snapshot.minute_bar.close_price, 185.50);
-    EXPECT_EQ(snapshot.minute_bar.volume, 50000u);
-    
+    EXPECT_DOUBLE_EQ(snapshot.minute_bar.volume, 50000.0);
+
     // Verify daily bar
     EXPECT_DOUBLE_EQ(snapshot.daily_bar.open_price, 183.00);
     EXPECT_DOUBLE_EQ(snapshot.daily_bar.close_price, 185.50);
-    EXPECT_EQ(snapshot.daily_bar.volume, 5000000u);
-    
+    EXPECT_DOUBLE_EQ(snapshot.daily_bar.volume, 5000000.0);
+
     // Verify previous daily bar
     EXPECT_DOUBLE_EQ(snapshot.prev_daily_bar.open_price, 181.00);
     EXPECT_DOUBLE_EQ(snapshot.prev_daily_bar.close_price, 183.00);
@@ -145,15 +145,15 @@ TEST(SnapshotsTest, FromJSON) {
 
     Snapshots snapshots;
     Status status = snapshots.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(snapshots.snapshots.size(), 2u);
-    
+
     // Verify AAPL snapshot
     EXPECT_TRUE(snapshots.snapshots.count("AAPL") > 0);
     EXPECT_DOUBLE_EQ(snapshots.snapshots["AAPL"].latest_trade.price, 185.50);
     EXPECT_DOUBLE_EQ(snapshots.snapshots["AAPL"].latest_quote.ask_price, 185.55);
-    
+
     // Verify GOOG snapshot
     EXPECT_TRUE(snapshots.snapshots.count("GOOG") > 0);
     EXPECT_DOUBLE_EQ(snapshots.snapshots["GOOG"].latest_trade.price, 142.25);
@@ -173,7 +173,7 @@ TEST(SnapshotTest, PartialData) {
 
     Snapshot snapshot;
     Status status = snapshot.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(snapshot.latest_trade.price, 185.50);
     // Other fields should be default values

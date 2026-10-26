@@ -7,8 +7,8 @@ namespace alpaca::markets {
 namespace {
 
 // Helper to dispatch a nested-object sub-key to a target model's fromJSON.
-Status parseNested(const glz::generic::object_t& obj, const char* key, auto& target_model) {
-    glz::generic::object_t::const_iterator it = obj.find(key);
+Status parseNested(const glz::generic_u64::object_t& obj, const char* key, auto& target_model) {
+    glz::generic_u64::object_t::const_iterator it = obj.find(key);
     if (it == obj.end() || !it->second.is_object()) {
         return Status();  // optional - absence is fine
     }
@@ -43,7 +43,7 @@ Status Snapshots::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("snapshots");
 
     // Parse snapshots - keyed by symbol
-    glz::generic::object_t::const_iterator it = node.find("snapshots");
+    glz::generic_u64::object_t::const_iterator it = node.find("snapshots");
     if (it != node.end() && it->second.is_object()) {
         for (const auto& [symbol, value] : it->second.get_object()) {
             Snapshot snapshot;

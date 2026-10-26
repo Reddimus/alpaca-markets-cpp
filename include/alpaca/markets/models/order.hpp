@@ -157,9 +157,9 @@ public:
     std::string side;
     std::string status;
     std::string stop_price;
-    std::string trail_price;     // For trailing stop orders
-    std::string trail_percent;   // For trailing stop orders
-    std::string hwm;             // High water mark for trailing stops
+    std::string trail_price;    // For trailing stop orders
+    std::string trail_percent;  // For trailing stop orders
+    std::string hwm;            // High water mark for trailing stops
     std::string submitted_at;
     std::string symbol;
     std::string time_in_force;

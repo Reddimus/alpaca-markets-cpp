@@ -6,6 +6,26 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-25
+
+### Changed
+
+- Require CMake 3.31 and OpenSSL 3; update private Glaze to 9.0.0,
+  cpp-httplib to 0.63.0, and Google Test to 1.18.0.
+- Trade/quote sizes and bar volumes use double for fractional quantities.
+- Apply REST timeouts and bounded GET retries; writes remain single-attempt.
+
+### Fixed
+
+- Preserve 64-bit IDs, reject invalid integer/numeric fields and trailing
+  JSON, clear reused models, and retain null array positions.
+- Encode URL components and honor full base URLs including ports.
+- Correct optional Brotli, Apple framework, Windows, and installed-package
+  linkage; enable macOS/Windows tests and sanitizer builds.
+- Enforce formatting failures and verify installed/embedded consumers,
+  README compilation, and REST behavior with a local server.
+- Replace stale setup, dependency, streaming, and testing documentation.
+
 ## [0.1.0] - 2026-05-12
 
 ### Changed
@@ -80,7 +100,7 @@ and the project uses [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   ([`1016c41`](https://github.com/Reddimus/alpaca-markets-cpp/commit/1016c41)).
 - `.github/workflows/release.yml` auto-creates a GitHub Release when
   a `vX.Y.Z` tag is pushed (body sourced from this CHANGELOG via
-  `--notes-file` so inline ` `code` ` spans survive)
+  `--notes-file` so inline spacecodespace spans survive)
   ([`5cb3c70`](https://github.com/Reddimus/alpaca-markets-cpp/commit/5cb3c70),
   [`f2ac561`](https://github.com/Reddimus/alpaca-markets-cpp/commit/f2ac561)).
 - Tag/CMakeLists `VERSION` drift caught at release time

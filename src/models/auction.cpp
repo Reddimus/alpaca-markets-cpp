@@ -20,9 +20,9 @@ Status SymbolAuctions::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("symbol auctions");
 
     // Parse daily auctions array "d"
-    glz::generic::object_t::const_iterator d_it = node.find("d");
+    glz::generic_u64::object_t::const_iterator d_it = node.find("d");
     if (d_it != node.end() && d_it->second.is_array()) {
-        for (const glz::generic& elem : d_it->second.get_array()) {
+        for (const glz::generic_u64& elem : d_it->second.get_array()) {
             Auction auction;
             if (Status status = auction.fromJSON(json_detail::write(elem)); !status.ok()) {
                 return status;
@@ -38,7 +38,7 @@ Status Auctions::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("auctions");
 
     // Parse auctions map
-    glz::generic::object_t::const_iterator auctions_it = node.find("auctions");
+    glz::generic_u64::object_t::const_iterator auctions_it = node.find("auctions");
     if (auctions_it != node.end() && auctions_it->second.is_object()) {
         for (const auto& [symbol, value] : auctions_it->second.get_object()) {
             SymbolAuctions symbol_auctions;

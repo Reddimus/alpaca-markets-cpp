@@ -3,21 +3,21 @@
 /**
  * @file markets.hpp
  * @brief Umbrella header for the Alpaca Markets C++ SDK
- * 
+ *
  * This header includes all public headers of the alpaca::markets library.
- * 
+ *
  * @code{.cpp}
  * #include <alpaca/markets/markets.hpp>
  * // or use individual headers:
  * // #include <alpaca/markets/client.hpp>
- * 
+ *
  * int main() {
  *     alpaca::markets::Environment env;
  *     if (alpaca::markets::Status status = env.parse(); !status.ok()) {
  *         std::cerr << "Error: " << status.getMessage() << std::endl;
  *         return 1;
  *     }
- *     
+ *
  *     alpaca::markets::Client client(env);
  *     // Use client...
  * }

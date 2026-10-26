@@ -21,7 +21,7 @@ TEST(StatusTest, ErrorStatus) {
 TEST(StatusTest, BoolConversion) {
     Status ok_status;
     Status error_status(1, "Error");
-    
+
     EXPECT_TRUE(static_cast<bool>(ok_status));
     EXPECT_FALSE(static_cast<bool>(error_status));
 }
@@ -30,7 +30,7 @@ TEST(StatusTest, Equality) {
     Status status1(0, "OK");
     Status status2(0, "OK");
     Status status3(1, "Error");
-    
+
     EXPECT_EQ(status1, status2);
     EXPECT_NE(status1, status3);
 }
@@ -50,7 +50,7 @@ TEST(ActionStatusTest, ToStringConversion) {
 
 TEST(APIErrorTest, BasicError) {
     APIError err(422, 40010000, "insufficient qty available for order");
-    
+
     EXPECT_EQ(err.getHTTPStatusCode(), 422);
     EXPECT_EQ(err.getAPICode(), 40010000);
     EXPECT_EQ(err.getMessage(), "insufficient qty available for order");
@@ -59,7 +59,7 @@ TEST(APIErrorTest, BasicError) {
 
 TEST(APIErrorTest, ErrorWithoutCode) {
     APIError err(403, 0, "forbidden");
-    
+
     EXPECT_EQ(err.getHTTPStatusCode(), 403);
     EXPECT_EQ(err.getAPICode(), 0);
     EXPECT_EQ(err.what(), "forbidden (HTTP 403)");
@@ -68,7 +68,7 @@ TEST(APIErrorTest, ErrorWithoutCode) {
 TEST(APIErrorTest, ToStatus) {
     APIError err(400, 40010001, "Bad request");
     Status status = err.toStatus();
-    
+
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.getMessage(), "Bad request (HTTP 400, Code 40010001)");
 }

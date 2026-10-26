@@ -24,7 +24,7 @@ TEST(NewsTest, FromJSON) {
 
     News news;
     Status status = news.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(news.id, 12345678u);
     EXPECT_EQ(news.headline, "Apple Reports Record Q4 Earnings");
@@ -63,7 +63,7 @@ TEST(NewsArticlesTest, FromJSON) {
 
     NewsArticles articles;
     Status status = articles.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(articles.news.size(), 2u);
     EXPECT_EQ(articles.news[0].headline, "First Article");

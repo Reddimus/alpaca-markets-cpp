@@ -1,7 +1,7 @@
-#include <gtest/gtest.h>
-
-#include <alpaca/markets/multi_trade.hpp>
 #include <alpaca/markets/multi_quote.hpp>
+#include <alpaca/markets/multi_trade.hpp>
+
+#include <gtest/gtest.h>
 
 using namespace alpaca::markets;
 

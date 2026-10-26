@@ -26,5 +26,17 @@ add_executable(alpaca_markets_parse_benchmark
 target_link_libraries(alpaca_markets_parse_benchmark PRIVATE
     alpaca_markets
 )
-add_test(NAME alpaca_markets_parse_benchmark COMMAND alpaca_markets_parse_benchmark)
+if(ALPACA_MARKETS_ENABLE_SANITIZERS)
+    add_test(NAME alpaca_markets_parse_benchmark COMMAND alpaca_markets_parse_benchmark --no-timing)
+else()
+    add_test(NAME alpaca_markets_parse_benchmark COMMAND alpaca_markets_parse_benchmark $<$<CONFIG:Debug>:--no-timing>)
+endif()
 set_tests_properties(alpaca_markets_parse_benchmark PROPERTIES TIMEOUT 30)
+
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(alpaca_markets_rest_probe rest_transport_probe.cpp)
+target_link_libraries(alpaca_markets_rest_probe PRIVATE alpaca::markets)
+add_test(NAME alpaca_markets_rest_transport
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_rest_transport.py"
+        $<TARGET_FILE:alpaca_markets_rest_probe>)
+set_tests_properties(alpaca_markets_rest_transport PROPERTIES TIMEOUT 30)

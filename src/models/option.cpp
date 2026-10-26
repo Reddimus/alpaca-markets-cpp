@@ -100,13 +100,13 @@ Status OptionContract::fromJSON(const std::string& json) {
     }
 
     // Parse deliverables array
-    glz::generic::object_t::const_iterator del_it = node.find("deliverables");
+    glz::generic_u64::object_t::const_iterator del_it = node.find("deliverables");
     if (del_it != node.end() && del_it->second.is_array()) {
-        for (const glz::generic& item : del_it->second.get_array()) {
+        for (const glz::generic_u64& item : del_it->second.get_array()) {
             if (!item.is_object()) {
                 continue;
             }
-            const glz::generic::object_t& item_obj = item.get_object();
+            const glz::generic_u64::object_t& item_obj = item.get_object();
             Deliverable del;
             json_detail::obj_get_string(item_obj, "type", del.type);
             json_detail::obj_get_string(item_obj, "symbol", del.symbol);
@@ -127,9 +127,9 @@ Status OptionContracts::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("option contracts");
 
     // Parse option_contracts array
-    glz::generic::object_t::const_iterator oc_it = node.find("option_contracts");
+    glz::generic_u64::object_t::const_iterator oc_it = node.find("option_contracts");
     if (oc_it != node.end() && oc_it->second.is_array()) {
-        for (const glz::generic& item : oc_it->second.get_array()) {
+        for (const glz::generic_u64& item : oc_it->second.get_array()) {
             OptionContract contract;
             if (Status status = contract.fromJSON(json_detail::write(item)); !status.ok()) {
                 return status;

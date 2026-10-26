@@ -12,7 +12,7 @@ namespace alpaca::markets {
  * @brief Image associated with a news article
  */
 struct NewsImage {
-    std::string size;   // "large", "small", "thumb"
+    std::string size;  // "large", "small", "thumb"
     std::string url;
 };
 
