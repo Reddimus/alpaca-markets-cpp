@@ -24,7 +24,7 @@ TEST(AnnouncementTest, FromJSON) {
 
     Announcement announcement;
     Status status = announcement.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(announcement.id, "ann-12345");
     EXPECT_EQ(announcement.corporate_actions_id, "ca-67890");
@@ -39,7 +39,7 @@ TEST(AnnouncementTest, FromJSON) {
 TEST(AnnouncementTest, FromJSONParseError) {
     Announcement announcement;
     Status status = announcement.fromJSON("invalid json");
-    
+
     EXPECT_FALSE(status.ok());
 }
 
@@ -55,7 +55,7 @@ TEST(AnnouncementTest, SplitAnnouncement) {
 
     Announcement announcement;
     Status status = announcement.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(announcement.ca_type, "split");
     EXPECT_EQ(announcement.ca_sub_type, "forward");

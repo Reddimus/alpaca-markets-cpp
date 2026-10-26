@@ -7,6 +7,8 @@
 #include <string>
 #include <string_view>
 
+#include "../detail/json.hpp"
+
 namespace alpaca::markets::stream {
 
 namespace {
@@ -30,15 +32,15 @@ std::string streamToString(StreamType stream) {
 
 std::string MessageGenerator::authentication(const std::string& key_id, const std::string& secret_key) const {
     // Build the {action, data: {key_id, secret_key}} envelope as a typed
-    // glz::generic so we don't have to declare a one-off struct. Glaze writes
+    // glz::generic_u64 so we don't have to declare a one-off struct. Glaze writes
     // ordered_map keys in insertion order, matching the pre-migration
     // RapidJSON Writer output.
-    glz::generic root = glz::generic::object_t{};
-    glz::generic::object_t& obj = root.get_object();
+    glz::generic_u64 root = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = root.get_object();
     obj["action"] = std::string("authenticate");
 
-    glz::generic data = glz::generic::object_t{};
-    glz::generic::object_t& data_obj = data.get_object();
+    glz::generic_u64 data = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& data_obj = data.get_object();
     data_obj["key_id"] = key_id;
     data_obj["secret_key"] = secret_key;
     obj["data"] = std::move(data);
@@ -49,15 +51,15 @@ std::string MessageGenerator::authentication(const std::string& key_id, const st
 }
 
 std::string MessageGenerator::listen(const std::set<StreamType>& streams) const {
-    glz::generic root = glz::generic::object_t{};
-    glz::generic::object_t& obj = root.get_object();
+    glz::generic_u64 root = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = root.get_object();
     obj["action"] = std::string("listen");
 
-    glz::generic data = glz::generic::object_t{};
-    glz::generic::object_t& data_obj = data.get_object();
+    glz::generic_u64 data = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& data_obj = data.get_object();
 
-    glz::generic streams_arr = glz::generic::array_t{};
-    glz::generic::array_t& arr = streams_arr.get_array();
+    glz::generic_u64 streams_arr = glz::generic_u64::array_t{};
+    glz::generic_u64::array_t& arr = streams_arr.get_array();
     for (const StreamType& stream : streams) {
         arr.emplace_back(streamToString(stream));
     }
@@ -78,21 +80,21 @@ std::pair<Status, Reply> parseReply(const std::string& text) {
     // The "data" payload's schema depends on the stream type. We keep
     // the existing contract: pass the data sub-object through to the
     // caller as a JSON string so per-stream handlers can re-parse with
-    // their own schema. The outer envelope is parsed via glz::generic
+    // their own schema. The outer envelope is parsed via glz::generic_u64
     // because Glaze's tagged-union support (glz::tag, glz::ids) maps a
     // stream-name discriminator to *typed* alternatives, but our
     // sub-models for trade_updates / account_updates are not declared
     // here (they live in downstream consumers' code).
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, text); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, text); ec) {
         return {Status(1, "Received parse error when deserializing reply JSON"), r};
     }
     if (!root.is_object()) {
         return {Status(1, "Deserialized valid JSON but it wasn't an object"), r};
     }
-    const glz::generic::object_t& obj = root.get_object();
+    const glz::generic_u64::object_t& obj = root.get_object();
 
-    glz::generic::object_t::const_iterator stream_it = obj.find("stream");
+    glz::generic_u64::object_t::const_iterator stream_it = obj.find("stream");
     if (stream_it == obj.end() || !stream_it->second.is_string()) {
         return {Status(1, "Reply did not contain stream key"), r};
     }
@@ -115,7 +117,7 @@ std::pair<Status, Reply> parseReply(const std::string& text) {
         return {Status(1, ss.str()), r};
     }
 
-    glz::generic::object_t::const_iterator data_it = obj.find("data");
+    glz::generic_u64::object_t::const_iterator data_it = obj.find("data");
     if (data_it != obj.end() && data_it->second.is_object()) {
         std::string data_json;
         (void)glz::write_json(data_it->second, data_json);

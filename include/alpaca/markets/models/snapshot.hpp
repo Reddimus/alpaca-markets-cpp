@@ -12,7 +12,7 @@ namespace alpaca::markets {
 
 /**
  * @brief A type representing a market snapshot for a symbol.
- * 
+ *
  * Contains the latest trade, quote, minute bar, daily bar, and previous daily bar.
  */
 class Snapshot {

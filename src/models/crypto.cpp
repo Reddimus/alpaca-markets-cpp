@@ -26,7 +26,7 @@ Status CryptoTrade::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("crypto trade");
 
     PARSE_DOUBLE(price, "p");
-    PARSE_UINT64(size, "s");
+    PARSE_DOUBLE(size, "s");
     PARSE_STRING(timestamp, "t");
     PARSE_UINT64(id, "i");
     PARSE_STRING(taker_side, "tks");
@@ -63,8 +63,8 @@ Status CryptoBar::fromJSON(const std::string& json) {
 
 namespace {
 
-Status parseNested(const glz::generic::object_t& obj, const char* key, auto& target_model) {
-    glz::generic::object_t::const_iterator it = obj.find(key);
+Status parseNested(const glz::generic_u64::object_t& obj, const char* key, auto& target_model) {
+    glz::generic_u64::object_t::const_iterator it = obj.find(key);
     if (it == obj.end() || !it->second.is_object()) {
         return Status();
     }
@@ -98,12 +98,12 @@ Status CryptoSnapshot::fromJSON(const std::string& json) {
 Status CryptoTrades::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("crypto trades");
 
-    glz::generic::object_t::const_iterator trades_it = node.find("trades");
+    glz::generic_u64::object_t::const_iterator trades_it = node.find("trades");
     if (trades_it != node.end() && trades_it->second.is_object()) {
         for (const auto& [symbol, value] : trades_it->second.get_object()) {
             std::vector<CryptoTrade> symbol_trades;
             if (value.is_array()) {
-                for (const glz::generic& item : value.get_array()) {
+                for (const glz::generic_u64& item : value.get_array()) {
                     CryptoTrade trade;
                     if (Status status = trade.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;
@@ -123,12 +123,12 @@ Status CryptoTrades::fromJSON(const std::string& json) {
 Status CryptoQuotes::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("crypto quotes");
 
-    glz::generic::object_t::const_iterator quotes_it = node.find("quotes");
+    glz::generic_u64::object_t::const_iterator quotes_it = node.find("quotes");
     if (quotes_it != node.end() && quotes_it->second.is_object()) {
         for (const auto& [symbol, value] : quotes_it->second.get_object()) {
             std::vector<CryptoQuote> symbol_quotes;
             if (value.is_array()) {
-                for (const glz::generic& item : value.get_array()) {
+                for (const glz::generic_u64& item : value.get_array()) {
                     CryptoQuote quote;
                     if (Status status = quote.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;
@@ -148,12 +148,12 @@ Status CryptoQuotes::fromJSON(const std::string& json) {
 Status CryptoBars::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("crypto bars");
 
-    glz::generic::object_t::const_iterator bars_it = node.find("bars");
+    glz::generic_u64::object_t::const_iterator bars_it = node.find("bars");
     if (bars_it != node.end() && bars_it->second.is_object()) {
         for (const auto& [symbol, value] : bars_it->second.get_object()) {
             std::vector<CryptoBar> symbol_bars;
             if (value.is_array()) {
-                for (const glz::generic& item : value.get_array()) {
+                for (const glz::generic_u64& item : value.get_array()) {
                     CryptoBar bar;
                     if (Status status = bar.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;

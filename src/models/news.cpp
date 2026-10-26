@@ -19,13 +19,13 @@ Status News::fromJSON(const std::string& json) {
     PARSE_VECTOR_STRINGS(symbols, "symbols");
 
     // Parse images array
-    glz::generic::object_t::const_iterator images_it = node.find("images");
+    glz::generic_u64::object_t::const_iterator images_it = node.find("images");
     if (images_it != node.end() && images_it->second.is_array()) {
-        for (const glz::generic& item : images_it->second.get_array()) {
+        for (const glz::generic_u64& item : images_it->second.get_array()) {
             if (!item.is_object()) {
                 continue;
             }
-            const glz::generic::object_t& img_obj = item.get_object();
+            const glz::generic_u64::object_t& img_obj = item.get_object();
             NewsImage img;
             json_detail::obj_get_string(img_obj, "size", img.size);
             json_detail::obj_get_string(img_obj, "url", img.url);
@@ -40,9 +40,9 @@ Status NewsArticles::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("news articles");
 
     // Parse news array
-    glz::generic::object_t::const_iterator news_it = node.find("news");
+    glz::generic_u64::object_t::const_iterator news_it = node.find("news");
     if (news_it != node.end() && news_it->second.is_array()) {
-        for (const glz::generic& item : news_it->second.get_array()) {
+        for (const glz::generic_u64& item : news_it->second.get_array()) {
             News article;
             if (Status status = article.fromJSON(json_detail::write(item)); !status.ok()) {
                 return status;

@@ -30,9 +30,9 @@ Status CorporateActions::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("corporate actions");
 
     // Parse corporate_actions array
-    glz::generic::object_t::const_iterator ca_it = node.find("corporate_actions");
+    glz::generic_u64::object_t::const_iterator ca_it = node.find("corporate_actions");
     if (ca_it != node.end() && ca_it->second.is_array()) {
-        for (const glz::generic& item : ca_it->second.get_array()) {
+        for (const glz::generic_u64& item : ca_it->second.get_array()) {
             CorporateAction action;
             if (Status status = action.fromJSON(json_detail::write(item)); !status.ok()) {
                 return status;

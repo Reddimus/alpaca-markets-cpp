@@ -35,7 +35,7 @@ enum class OptionStatus {
  * @brief Deliverable associated with an option contract
  */
 struct Deliverable {
-    std::string type;           // "cash", "equity"
+    std::string type;  // "cash", "equity"
     std::string symbol;
     std::string asset_id;
     std::string amount;
@@ -70,8 +70,8 @@ public:
     OptionType type = OptionType::Call;
     OptionStyle style = OptionStyle::American;
     std::string strike_price;
-    std::string size;               // multiplier, typically "100"
-    std::string expiration_date;    // YYYY-MM-DD
+    std::string size;             // multiplier, typically "100"
+    std::string expiration_date;  // YYYY-MM-DD
     std::string open_interest;
     std::string open_interest_date;
     std::string close_price;

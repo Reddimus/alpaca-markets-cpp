@@ -18,10 +18,10 @@ TEST(TradeTest, FromJSON) {
 
     Trade trade;
     Status status = trade.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(trade.price, 150.50);
-    EXPECT_EQ(trade.size, 100u);
+    EXPECT_DOUBLE_EQ(trade.size, 100.0);
     EXPECT_EQ(trade.exchange, "V");
     EXPECT_EQ(trade.id, 123456789u);
     EXPECT_EQ(trade.timestamp, "2023-01-01T10:00:00Z");
@@ -48,11 +48,11 @@ TEST(LatestTradeTest, FromJSON) {
 
     LatestTrade latest_trade;
     Status status = latest_trade.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(latest_trade.symbol, "AAPL");
     EXPECT_DOUBLE_EQ(latest_trade.trade.price, 150.50);
-    EXPECT_EQ(latest_trade.trade.size, 100u);
+    EXPECT_DOUBLE_EQ(latest_trade.trade.size, 100.0);
 }
 
 TEST(TradeTest, FromJSONParseError) {

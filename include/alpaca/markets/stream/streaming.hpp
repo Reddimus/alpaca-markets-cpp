@@ -1,7 +1,7 @@
 #pragma once
 
-#include <alpaca/markets/rest/config.hpp>
 #include <alpaca/markets/models/status.hpp>
+#include <alpaca/markets/rest/config.hpp>
 
 #include <functional>
 #include <set>
@@ -60,8 +60,8 @@ public:
 public:
     /**
      * @brief Run the stream handler and block.
-     * 
-     * Note: This is a placeholder for streaming support. Full WebSocket 
+     *
+     * Note: This is a placeholder for streaming support. Full WebSocket
      * implementation requires additional dependencies (e.g., Boost.Beast).
      */
     Status run(Environment& env);

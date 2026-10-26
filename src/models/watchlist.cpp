@@ -14,10 +14,10 @@ Status Watchlist::fromJSON(const std::string& json) {
     PARSE_STRING(updated_at, "updated_at");
 
     // Parse assets array
-    glz::generic::object_t::const_iterator assets_it = node.find("assets");
+    glz::generic_u64::object_t::const_iterator assets_it = node.find("assets");
     if (assets_it != node.end() && assets_it->second.is_array()) {
         assets.clear();
-        for (const glz::generic& item : assets_it->second.get_array()) {
+        for (const glz::generic_u64& item : assets_it->second.get_array()) {
             Asset asset;
             if (Status status = asset.fromJSON(json_detail::write(item)); !status.ok()) {
                 return status;

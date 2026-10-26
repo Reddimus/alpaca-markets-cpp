@@ -10,7 +10,7 @@ namespace alpaca::markets {
 
 /**
  * @brief A type representing multi-symbol historical quotes with pagination.
- * 
+ *
  * Used for batch retrieval of historical quotes across multiple symbols.
  */
 class MultiQuotes {
@@ -26,7 +26,7 @@ public:
 
 public:
     std::map<std::string, std::vector<Quote>> quotes;  // Symbol -> Quotes
-    std::string next_page_token;                        // Pagination token
+    std::string next_page_token;                       // Pagination token
 };
 
 }  // namespace alpaca::markets

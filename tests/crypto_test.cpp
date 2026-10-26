@@ -15,11 +15,11 @@ TEST(CryptoTradeTest, FromJSON) {
 
     CryptoTrade trade;
     Status status = trade.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(trade.timestamp, "2024-01-10T15:30:00Z");
     EXPECT_DOUBLE_EQ(trade.price, 42500.50);
-    EXPECT_EQ(trade.size, 1500000u);
+    EXPECT_DOUBLE_EQ(trade.size, 1500000.0);
     EXPECT_EQ(trade.id, 12345u);
     EXPECT_EQ(trade.taker_side, "B");
 }
@@ -35,7 +35,7 @@ TEST(CryptoQuoteTest, FromJSON) {
 
     CryptoQuote quote;
     Status status = quote.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(quote.timestamp, "2024-01-10T15:30:00Z");
     EXPECT_DOUBLE_EQ(quote.ask_price, 42505.00);
@@ -58,7 +58,7 @@ TEST(CryptoBarTest, FromJSON) {
 
     CryptoBar bar;
     Status status = bar.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(bar.timestamp, "2024-01-10T00:00:00Z");
     EXPECT_DOUBLE_EQ(bar.open_price, 42000.00);
@@ -107,7 +107,7 @@ TEST(CryptoSnapshotTest, FromJSON) {
 
     CryptoSnapshot snapshot;
     Status status = snapshot.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(snapshot.latest_trade.price, 42500.50);
     EXPECT_EQ(snapshot.latest_trade.taker_side, "B");
@@ -132,7 +132,7 @@ TEST(CryptoTradesTest, FromJSON) {
 
     CryptoTrades trades;
     Status status = trades.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(trades.trades.size(), 2u);
     EXPECT_EQ(trades.trades["BTC/USD"].size(), 2u);
@@ -153,7 +153,7 @@ TEST(CryptoBarsTest, FromJSON) {
 
     CryptoBars bars;
     Status status = bars.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(bars.bars.size(), 1u);
     EXPECT_EQ(bars.bars["BTC/USD"].size(), 1u);
@@ -164,7 +164,7 @@ TEST(CryptoBarsTest, FromJSON) {
 TEST(CryptoFeedTest, Conversions) {
     EXPECT_EQ(cryptoFeedToString(CryptoFeed::US), "us");
     EXPECT_EQ(cryptoFeedToString(CryptoFeed::Global), "global");
-    
+
     EXPECT_EQ(stringToCryptoFeed("us"), CryptoFeed::US);
     EXPECT_EQ(stringToCryptoFeed("global"), CryptoFeed::Global);
     EXPECT_EQ(stringToCryptoFeed("unknown"), CryptoFeed::US);  // default

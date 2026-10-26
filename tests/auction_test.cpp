@@ -1,6 +1,6 @@
-#include <gtest/gtest.h>
-
 #include <alpaca/markets/auction.hpp>
+
+#include <gtest/gtest.h>
 
 using namespace alpaca::markets;
 

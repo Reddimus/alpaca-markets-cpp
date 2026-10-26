@@ -11,7 +11,7 @@ namespace alpaca::markets {
 
 /**
  * @brief A type representing a single auction entry.
- * 
+ *
  * Auctions represent opening and closing auction data for a stock.
  */
 class Auction {
@@ -26,11 +26,11 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    std::string timestamp;     // "t" - ISO 8601 timestamp
-    double price = 0.0;        // "p" - auction price
-    uint64_t size = 0;         // "s" - auction size
-    std::string exchange;      // "x" - exchange code
-    std::string condition;     // "c" - condition code
+    std::string timestamp;  // "t" - ISO 8601 timestamp
+    double price = 0.0;     // "p" - auction price
+    uint64_t size = 0;      // "s" - auction size
+    std::string exchange;   // "x" - exchange code
+    std::string condition;  // "c" - condition code
 };
 
 /**
@@ -48,7 +48,7 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    std::vector<Auction> daily_auctions;   // "d" - daily auctions (opening/closing)
+    std::vector<Auction> daily_auctions;  // "d" - daily auctions (opening/closing)
 };
 
 /**
@@ -67,7 +67,7 @@ public:
 
 public:
     std::map<std::string, SymbolAuctions> auctions;  // Symbol -> SymbolAuctions
-    std::string next_page_token;                      // Pagination token
+    std::string next_page_token;                     // Pagination token
 };
 
 }  // namespace alpaca::markets

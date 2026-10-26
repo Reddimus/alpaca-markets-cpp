@@ -1,7 +1,24 @@
 @PACKAGE_INIT@
 
 include(CMakeFindDependencyMacro)
-find_dependency(OpenSSL)
+find_dependency(OpenSSL 3.0)
 find_dependency(ZLIB)
+find_dependency(Threads)
+if(@ALPACA_MARKETS_USE_SYSTEM_HTTPLIB@)
+    find_dependency(httplib 0.63 CONFIG)
+endif()
+if(@ALPACA_MARKETS_BROTLI_ENABLED@)
+    if(WIN32)
+        find_dependency(unofficial-brotli CONFIG)
+        if(NOT TARGET PkgConfig::BROTLI)
+            add_library(PkgConfig::BROTLI INTERFACE IMPORTED)
+            target_link_libraries(PkgConfig::BROTLI INTERFACE
+                unofficial::brotli::brotlidec unofficial::brotli::brotlienc unofficial::brotli::brotlicommon)
+        endif()
+    else()
+        find_dependency(PkgConfig)
+        pkg_check_modules(BROTLI REQUIRED IMPORTED_TARGET libbrotlidec libbrotlienc)
+    endif()
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/alpaca_markets-targets.cmake")

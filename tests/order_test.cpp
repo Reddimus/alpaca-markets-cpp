@@ -33,7 +33,7 @@ TEST(OrderTest, FromJSON) {
 
     Order order;
     Status status = order.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(order.asset_class, "us_equity");
     EXPECT_EQ(order.client_order_id, "client-456");
@@ -48,7 +48,7 @@ TEST(OrderTest, FromJSON) {
 TEST(OrderTest, FromJSONParseError) {
     Order order;
     Status status = order.fromJSON("invalid json");
-    
+
     EXPECT_FALSE(status.ok());
 }
 
@@ -114,7 +114,7 @@ TEST(OrderTest, FromJSONWithTrailingStop) {
 
     Order order;
     Status status = order.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(order.type, "trailing_stop");
     EXPECT_EQ(order.trail_price, "5.00");
@@ -135,7 +135,7 @@ TEST(OrderTest, FromJSONWithNotional) {
 
     Order order;
     Status status = order.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(order.notional, "1000.00");
 }

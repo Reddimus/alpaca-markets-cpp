@@ -13,20 +13,20 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies
-        # rapidjson-dev / httplib aren't always packaged; the CMake
-        # config FetchContent's them when not found, so apt only needs
-        # the truly mandatory deps (openssl + zlib + brotli).
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             build-essential cmake pkg-config clang-format \
-            libssl-dev zlib1g-dev libbrotli-dev rapidjson-dev
+            libssl-dev zlib1g-dev libbrotli-dev
 
       - name: Build
         run: make build
 
       - name: Test
         run: make test
+
+      - name: Consumer builds
+        run: make consumers
 
       - name: Lint
         run: make lint
@@ -41,21 +41,14 @@ jobs:
         # brew tracks the latest LLVM, and clang-format formatting output
         # changes between versions.
         run: |
-          brew install pkg-config openssl zlib brotli rapidjson cpp-httplib
+          brew install pkg-config openssl zlib brotli
           echo "PKG_CONFIG_PATH=$(brew --prefix openssl)/lib/pkgconfig:$(brew --prefix zlib)/lib/pkgconfig:$PKG_CONFIG_PATH" >> "$GITHUB_ENV"
           echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl);$(brew --prefix zlib);$(brew --prefix brotli)" >> "$GITHUB_ENV"
 
       - name: Build
         run: make build
 
-      # Test step intentionally disabled on macOS pending investigation
-      # of linker errors building the test binary (likely brotli/zlib
-      # symbol mismatch or httplib SSL feature flag drift between brew
-      # and apt). Build step still verifies macOS portability of the
-      # library compile path. Track follow-up: re-enable once linker
-      # errors are root-caused.
       - name: Test
-        if: false
         run: make test
 
   build-windows:
@@ -64,9 +57,6 @@ jobs:
       - uses: actions/checkout@v6
 
       - name: Install dependencies (vcpkg)
-        # GitHub-hosted Windows runners ship vcpkg pre-installed at
-        # $env:VCPKG_INSTALLATION_ROOT. cpp-httplib and rapidjson are
-        # FetchContent'd in CMake; vcpkg only needs the system deps.
         shell: pwsh
         run: |
           & "$env:VCPKG_INSTALLATION_ROOT/vcpkg.exe" install `
@@ -82,12 +72,7 @@ jobs:
             "-DVCPKG_TARGET_TRIPLET=$env:VCPKG_TARGET_TRIPLET"
           cmake --build build --config Release -j
 
-      # Test step deferred on Windows for the same reason as macOS —
-      # cpp-httplib + brotli linker shape is platform-sensitive and
-      # the unit tests don't gate the SDK's portability claim. Build
-      # verification still proves Windows-portable codegen.
       - name: Test
-        if: false
         shell: pwsh
         run: ctest --test-dir build --output-on-failure -C Release
 

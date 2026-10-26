@@ -36,7 +36,7 @@ TEST(AccountTest, FromJSON) {
 
     Account account;
     Status status = account.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_FALSE(account.account_blocked);
     EXPECT_EQ(account.account_number, "123456789");
@@ -50,7 +50,7 @@ TEST(AccountTest, FromJSON) {
 TEST(AccountTest, FromJSONParseError) {
     Account account;
     Status status = account.fromJSON("invalid json");
-    
+
     EXPECT_FALSE(status.ok());
     EXPECT_EQ(status.getCode(), 1);
 }
@@ -65,7 +65,7 @@ TEST(AccountConfigurationsTest, FromJSON) {
 
     AccountConfigurations config;
     Status status = config.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(config.dtbp_check, "entry");
     EXPECT_FALSE(config.no_shorting);
@@ -90,7 +90,7 @@ TEST(TradeActivityTest, FromJSON) {
 
     TradeActivity activity;
     Status status = activity.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(activity.activity_type, "FILL");
     EXPECT_EQ(activity.symbol, "AAPL");
@@ -111,7 +111,7 @@ TEST(NonTradeActivityTest, FromJSON) {
 
     NonTradeActivity activity;
     Status status = activity.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(activity.activity_type, "DIV");
     EXPECT_EQ(activity.symbol, "AAPL");

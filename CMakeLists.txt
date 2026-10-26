@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.25)
-project(alpaca_markets VERSION 0.1.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.31)
+project(alpaca_markets VERSION 0.2.0 LANGUAGES CXX)
 
 # C++23 standard (matches sibling SDKs after 2026-05-11 Glaze migration).
 set(CMAKE_CXX_STANDARD 23)
@@ -28,6 +28,12 @@ option(ALPACA_MARKETS_BUILD_TESTS "Build tests" ${ALPACA_MARKETS_BUILD_TESTS_DEF
 option(ALPACA_MARKETS_BUILD_EXAMPLES "Build examples" ${ALPACA_MARKETS_BUILD_EXAMPLES_DEFAULT})
 option(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB "Use system cpp-httplib instead of FetchContent" OFF)
 
+option(ALPACA_MARKETS_ENABLE_SANITIZERS "Enable AddressSanitizer and UBSan" OFF)
+if(ALPACA_MARKETS_ENABLE_SANITIZERS AND NOT MSVC)
+    add_compile_options(-fsanitize=address,undefined -fno-omit-frame-pointer)
+    add_link_options(-fsanitize=address,undefined)
+endif()
+
 # Dependencies
 include(FetchContent)
 
@@ -37,28 +43,33 @@ include(FetchContent)
 FetchContent_Declare(
     glaze
     GIT_REPOSITORY https://github.com/stephenberry/glaze.git
-    GIT_TAG v7.6.0
+    GIT_TAG v9.0.0
     GIT_SHALLOW TRUE
+    EXCLUDE_FROM_ALL
 )
 FetchContent_MakeAvailable(glaze)
 
 # cpp-httplib (header-only)
 if(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB)
-    find_package(httplib REQUIRED)
+    find_package(httplib 0.63 CONFIG REQUIRED)
 else()
     FetchContent_Declare(
         httplib
         GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
-        GIT_TAG v0.14.3
+        GIT_TAG v0.63.0
     )
+    set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
+    set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+    set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(httplib)
 endif()
 
 # Find OpenSSL for HTTPS support
-find_package(OpenSSL REQUIRED)
+find_package(OpenSSL 3.0 REQUIRED)
 
 # Find ZLIB for compression support (used by cpp-httplib)
 find_package(ZLIB REQUIRED)
+find_package(Threads REQUIRED)
 
 # Find Brotli for compression support (optional, used by cpp-httplib).
 # pkg-config isn't available on Windows runners; on Windows we fall
@@ -103,6 +114,9 @@ target_include_directories(alpaca_markets_rest PUBLIC
 )
 target_link_libraries(alpaca_markets_rest PRIVATE httplib::httplib OpenSSL::SSL OpenSSL::Crypto glaze::glaze)
 target_compile_definitions(alpaca_markets_rest PRIVATE CPPHTTPLIB_OPENSSL_SUPPORT)
+if(WIN32)
+    target_compile_definitions(alpaca_markets_rest PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
 
 # Stream module
 file(GLOB ALPACA_STREAM_SOURCES "src/stream/*.cpp")
@@ -135,7 +149,12 @@ target_link_libraries(alpaca_markets
         OpenSSL::SSL
         OpenSSL::Crypto
         ZLIB::ZLIB
+        Threads::Threads
 )
+
+if(ALPACA_MARKETS_USE_SYSTEM_HTTPLIB)
+    target_link_libraries(alpaca_markets PRIVATE httplib::httplib)
+endif()
 
 # Optional Brotli support. Link via the PkgConfig::BROTLI imported
 # target - it propagates the right link line on every platform:
@@ -147,10 +166,20 @@ target_link_libraries(alpaca_markets
 # Linux because pkg_check_modules populated it; on Windows it was
 # empty, and the alpaca_markets static archive's brotli symbols
 # went unresolved at executable link time.
+set(ALPACA_MARKETS_BROTLI_ENABLED FALSE)
 if(BROTLI_FOUND)
     target_link_libraries(alpaca_markets PUBLIC PkgConfig::BROTLI)
-    target_compile_definitions(alpaca_markets PRIVATE CPPHTTPLIB_BROTLI_SUPPORT)
-    set(ALPACA_MARKETS_BROTLI_ENABLED TRUE CACHE INTERNAL "Brotli support enabled")
+    target_compile_definitions(alpaca_markets_rest PRIVATE CPPHTTPLIB_BROTLI_SUPPORT)
+    target_link_libraries(alpaca_markets_rest PRIVATE PkgConfig::BROTLI)
+    set(ALPACA_MARKETS_BROTLI_ENABLED TRUE)
+endif()
+
+# Object-library usage requirements do not propagate through TARGET_OBJECTS.
+if(APPLE)
+    target_link_libraries(alpaca_markets PUBLIC
+        "-framework CFNetwork" "-framework CoreFoundation" "-framework Security")
+elseif(WIN32)
+    target_link_libraries(alpaca_markets PUBLIC ws2_32 crypt32)
 endif()
 
 # Enable OpenSSL support in cpp-httplib
@@ -167,22 +196,23 @@ if(ALPACA_MARKETS_BUILD_TESTS)
     FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
+        GIT_TAG v1.18.0
     )
+    set(INSTALL_GTEST OFF CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
     # Suppress warnings for third-party googletest/googlemock targets
     if(TARGET gtest)
-        target_compile_options(gtest PRIVATE -w)
+        target_compile_options(gtest PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>)
     endif()
     if(TARGET gtest_main)
-        target_compile_options(gtest_main PRIVATE -w)
+        target_compile_options(gtest_main PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>)
     endif()
     if(TARGET gmock)
-        target_compile_options(gmock PRIVATE -w)
+        target_compile_options(gmock PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>)
     endif()
     if(TARGET gmock_main)
-        target_compile_options(gmock_main PRIVATE -w)
+        target_compile_options(gmock_main PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-w>)
     endif()
 
     add_subdirectory(tests)

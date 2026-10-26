@@ -26,7 +26,7 @@ TEST(OptionContractTest, FromJSON) {
 
     OptionContract contract;
     Status status = contract.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(contract.id, "c1234567-89ab-cdef-0123-456789abcdef");
     EXPECT_EQ(contract.symbol, "AAPL241220C00200000");
@@ -60,7 +60,7 @@ TEST(OptionContractTest, FromJSONPutOption) {
 
     OptionContract contract;
     Status status = contract.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(contract.type, OptionType::Put);
 }
@@ -87,7 +87,7 @@ TEST(OptionContractTest, FromJSONWithDeliverables) {
 
     OptionContract contract;
     Status status = contract.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(contract.deliverables.size(), 1u);
     EXPECT_EQ(contract.deliverables[0].type, "equity");
@@ -119,7 +119,7 @@ TEST(OptionContractsTest, FromJSON) {
 
     OptionContracts contracts;
     Status status = contracts.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(contracts.option_contracts.size(), 2u);
     EXPECT_EQ(contracts.option_contracts[0].symbol, "AAPL241220C00200000");
@@ -132,7 +132,7 @@ TEST(OptionContractsTest, FromJSON) {
 TEST(OptionTypeTest, Conversions) {
     EXPECT_EQ(optionTypeToString(OptionType::Call), "call");
     EXPECT_EQ(optionTypeToString(OptionType::Put), "put");
-    
+
     EXPECT_EQ(stringToOptionType("call"), OptionType::Call);
     EXPECT_EQ(stringToOptionType("put"), OptionType::Put);
     EXPECT_EQ(stringToOptionType("unknown"), OptionType::Call);  // default
@@ -141,7 +141,7 @@ TEST(OptionTypeTest, Conversions) {
 TEST(OptionStyleTest, Conversions) {
     EXPECT_EQ(optionStyleToString(OptionStyle::American), "american");
     EXPECT_EQ(optionStyleToString(OptionStyle::European), "european");
-    
+
     EXPECT_EQ(stringToOptionStyle("american"), OptionStyle::American);
     EXPECT_EQ(stringToOptionStyle("european"), OptionStyle::European);
     EXPECT_EQ(stringToOptionStyle("unknown"), OptionStyle::American);  // default
@@ -150,7 +150,7 @@ TEST(OptionStyleTest, Conversions) {
 TEST(OptionStatusTest, Conversions) {
     EXPECT_EQ(optionStatusToString(OptionStatus::Active), "active");
     EXPECT_EQ(optionStatusToString(OptionStatus::Inactive), "inactive");
-    
+
     EXPECT_EQ(stringToOptionStatus("active"), OptionStatus::Active);
     EXPECT_EQ(stringToOptionStatus("inactive"), OptionStatus::Inactive);
     EXPECT_EQ(stringToOptionStatus("unknown"), OptionStatus::Active);  // default

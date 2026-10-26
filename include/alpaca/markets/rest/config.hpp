@@ -2,7 +2,9 @@
 
 #include <alpaca/markets/models/status.hpp>
 
+#include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <string>
 
 namespace alpaca::markets {
@@ -24,50 +26,52 @@ inline const std::string kTradingStreamURLPaper = "wss://paper-api.alpaca.market
 
 /**
  * @brief Configuration for request retry behavior.
- * 
+ *
  * Provides configurable retry policy with exponential backoff.
  */
 struct RetryConfig {
-    /// Maximum number of retry attempts (0 = no retries)
+    /// Additional GET attempts, clamped to 0..100 (0 disables retries)
     int max_retries = 3;
-    
+
     /// Initial delay between retries
     std::chrono::milliseconds initial_delay{100};
-    
+
     /// Maximum delay between retries
     std::chrono::milliseconds max_delay{5000};
-    
+
     /// Multiplier for exponential backoff (e.g., 2.0 doubles delay each retry)
     double backoff_multiplier = 2.0;
-    
-    /// HTTP status codes that should trigger a retry
-    /// Default: 429 (rate limit), 500, 502, 503, 504 (server errors)
-    bool shouldRetry(int status_code) const {
-        return status_code == 429 || status_code >= 500;
-    }
-    
-    /// Calculate delay for a given retry attempt (0-based)
+
+    /// GET requests retry 429 and 5xx responses; writes are never retried.
+    bool shouldRetry(int status_code) const { return status_code == 429 || (status_code >= 500 && status_code < 600); }
+
+    /// Nonnegative exponential delay, capped at max_delay and one day.
+    /// Invalid multipliers use 1; negative durations become zero.
     [[nodiscard]] std::chrono::milliseconds getDelay(int attempt) const {
-        if (attempt <= 0) return initial_delay;
-        double delay_ms = static_cast<double>(initial_delay.count());
-        for (int i = 0; i < attempt; ++i) {
-            delay_ms *= backoff_multiplier;
+        using Milliseconds = std::chrono::milliseconds;
+        const Milliseconds cap = std::clamp(max_delay, Milliseconds::zero(), Milliseconds{86400000});
+        const Milliseconds initial = std::clamp(initial_delay, Milliseconds::zero(), cap);
+        const double multiplier =
+            std::isfinite(backoff_multiplier) && backoff_multiplier >= 0 ? backoff_multiplier : 1.0;
+        if (attempt <= 0 || initial.count() == 0) {
+            return initial;
         }
-        auto computed = std::chrono::milliseconds(static_cast<long>(delay_ms));
-        return computed > max_delay ? max_delay : computed;
+        const double value = static_cast<double>(initial.count()) * std::pow(multiplier, attempt);
+        if (!std::isfinite(value) || value >= static_cast<double>(cap.count())) {
+            return cap;
+        }
+        return Milliseconds{static_cast<Milliseconds::rep>(value)};
     }
-    
+
     /// Create a config with no retries
     static RetryConfig noRetries() {
         RetryConfig config;
         config.max_retries = 0;
         return config;
     }
-    
+
     /// Create a default config (3 retries, exponential backoff)
-    static RetryConfig defaultConfig() {
-        return RetryConfig{};
-    }
+    static RetryConfig defaultConfig() { return RetryConfig{}; }
 };
 
 /**
@@ -76,18 +80,16 @@ struct RetryConfig {
 struct TimeoutConfig {
     /// Connection timeout
     std::chrono::seconds connection_timeout{10};
-    
+
     /// Read timeout (time to wait for data after connection)
     std::chrono::seconds read_timeout{30};
-    
+
     /// Write timeout
     std::chrono::seconds write_timeout{30};
-    
+
     /// Create a config with default timeouts
-    static TimeoutConfig defaultConfig() {
-        return TimeoutConfig{};
-    }
-    
+    static TimeoutConfig defaultConfig() { return TimeoutConfig{}; }
+
     /// Create a config with longer timeouts for slow networks
     static TimeoutConfig longTimeouts() {
         TimeoutConfig config;
@@ -118,7 +120,7 @@ public:
     /**
      * @brief Default constructor
      *
-     * Uses default environment variable names. Supports both legacy APCA_* 
+     * Uses default environment variable names. Supports both legacy APCA_*
      * and newer ALPACA_MARKETS_* naming conventions.
      */
     Environment() = default;
@@ -126,7 +128,7 @@ public:
     /**
      * @brief Constructor with custom environment variable names
      *
-     * Use this constructor if you'd like to parse the required environment 
+     * Use this constructor if you'd like to parse the required environment
      * variables from non-standard names.
      */
     explicit Environment(std::string api_key_id_env_var, std::string api_secret_key_env_var,

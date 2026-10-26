@@ -1,37 +1,17 @@
-# alpaca-markets-cpp Development Guide
+# Development guide
 
-## Build & Test
+Read README.md for build, usage, supported scope, and runtime policies.
+Use `make build test lint consumers` before submitting changes. CI builds
+and tests Linux, macOS, and Windows; Markdown lint runs separately.
 
-```bash
-make build              # Release build (CMake + make)
-make debug              # Debug build
-make test               # Run unit tests (ctest)
-make lint               # Check formatting (clang-format --dry-run)
-make format             # Format in place
-make clean              # Remove build/
+C++23, namespace alpaca::markets, four-space indentation, 120 columns.
+Use explicit local types except structured bindings, lambdas, and
+iterators. Keep public compatibility forwarding headers. Glaze is private;
+model parsing helpers live in src/detail/json.hpp. REST uses cpp-httplib;
+streaming has message helpers but no WebSocket transport. OBJECT modules
+are combined into alpaca::markets: propagate their link dependencies to
+the final library. Test fractional quantities and full-width integer IDs.
 
-make models             # Build only the models module
-make rest               # Build only the REST module
-make stream             # Build only the stream module
-make smart-build        # Diff-aware rebuild (tracks .build_sha)
-```
-
-## Architecture
-
-- **Modular OBJECT libraries**: `alpaca_markets_models`, `alpaca_markets_rest`, `alpaca_markets_stream` — combined into `alpaca_markets` (with `alpaca::markets` ALIAS)
-- **C++23**: cpp-httplib transport + [Glaze](https://github.com/stephenberry/glaze) v7.6.0 via FetchContent (compile-time reflection; migrated 2026-05-11 from RapidJSON, ~3.3x parse speedup on round-trip-heavy Market Data v2 payloads, ~4x on flat numeric payloads — see `tests/parse_benchmark.cpp`).
-- **Origin**: forked from archived upstream `marpaia/alpaca-trade-api-cpp`. Inherited 2020 `v0.0.2`/`v0.0.3` tags are not Reddimus releases — Reddimus's first release is `v0.0.1` (2026-01-17).
-- **REST coverage**: 40+ endpoints across Trading API v2 + Market Data API v2 (Account, Order, Position, Asset, Bars, Quotes, Options, Corporate Actions, News, Crypto)
-- **Stream**: scaffolding only, no WebSocket yet
-- **Tests**: 94 unit tests for models. macOS test binary fails to link (`clang++: linker command failed exit 1`) — likely brotli/zlib symbol mismatch or cpp-httplib SSL feature drift between brew HEAD and apt. Linux Tests run; macOS Test step disabled with `if: false`.
-
-## Conventions
-
-- Code style: `.clang-format` (Google base, **4-space indent**, **120 cols**). Note: this differs from the sibling SDKs (kalshi-cpp/polymarket-cpp/open-meteo-cpp/nws-cpp/ncei-cpp use tabs + 100 cols) — kept on Google/spaces because the upstream marpaia fork shipped that style and rewriting all files would be churn without functional benefit.
-- Namespace: `alpaca::markets`
-- **No `auto`** for local declarations — explicit types preferred (consistent with sibling SDKs).
-- Examples in `examples/`: `view_account_info.cpp`, `check_market_status.cpp`, `get_latest_quote.cpp`. Built as plain binaries (no `example_` prefix), no `run-*` Makefile targets — invoke `./build/examples/<name>` directly.
-
-## CI
-
-GitHub Actions workflow `.github/workflows/ci.yml`: build on Ubuntu 24.04 + macos-latest + windows-latest, lint via clang-format and markdown-lint. macOS Test step disabled (`if: false`) pending linker-error root-cause. Release workflow auto-creates a GitHub Release on `vX.Y.Z` tag push (notes extracted from `CHANGELOG.md`). Default branch is `main` (migrated 2026-04-30 from `master` for sibling-repo consistency).
+This repository is a fork of archived marpaia/alpaca-trade-api-cpp;
+pre-fork tags are historical. Keep comments and documentation concise.
+Do not include credentials in fixtures, logs, or committed configuration.

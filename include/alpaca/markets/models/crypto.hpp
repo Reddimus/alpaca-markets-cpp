@@ -25,11 +25,11 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    double price = 0.0;           // "p"
-    uint64_t size = 0;            // "s"
-    std::string timestamp;        // "t" - ISO 8601
-    uint64_t id = 0;              // "i" - trade ID
-    std::string taker_side;       // "tks" - "B" or "S"
+    double price = 0.0;      // "p"
+    double size = 0.0;       // "s"
+    std::string timestamp;   // "t" - ISO 8601
+    uint64_t id = 0;         // "i" - trade ID
+    std::string taker_side;  // "tks" - "B" or "S"
 };
 
 /**
@@ -40,11 +40,11 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    double ask_price = 0.0;      // "ap"
-    double ask_size = 0.0;       // "as" - can be decimal for crypto
-    double bid_price = 0.0;      // "bp"
-    double bid_size = 0.0;       // "bs" - can be decimal for crypto
-    std::string timestamp;       // "t" - ISO 8601
+    double ask_price = 0.0;  // "ap"
+    double ask_size = 0.0;   // "as" - can be decimal for crypto
+    double bid_price = 0.0;  // "bp"
+    double bid_size = 0.0;   // "bs" - can be decimal for crypto
+    std::string timestamp;   // "t" - ISO 8601
 };
 
 /**
@@ -55,14 +55,14 @@ public:
     Status fromJSON(const std::string& json);
 
 public:
-    std::string timestamp;        // "t"
-    double open_price = 0.0;      // "o"
-    double high_price = 0.0;      // "h"
-    double low_price = 0.0;       // "l"
-    double close_price = 0.0;     // "c"
-    double volume = 0.0;          // "v" - can be decimal for crypto
-    uint64_t trade_count = 0;     // "n"
-    double vwap = 0.0;            // "vw"
+    std::string timestamp;     // "t"
+    double open_price = 0.0;   // "o"
+    double high_price = 0.0;   // "h"
+    double low_price = 0.0;    // "l"
+    double close_price = 0.0;  // "c"
+    double volume = 0.0;       // "v" - can be decimal for crypto
+    uint64_t trade_count = 0;  // "n"
+    double vwap = 0.0;         // "vw"
 };
 
 /**

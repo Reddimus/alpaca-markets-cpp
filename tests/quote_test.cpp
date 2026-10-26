@@ -19,13 +19,13 @@ TEST(QuoteTest, FromJSON) {
 
     Quote quote;
     Status status = quote.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_DOUBLE_EQ(quote.ask_price, 150.55);
-    EXPECT_EQ(quote.ask_size, 200u);
+    EXPECT_DOUBLE_EQ(quote.ask_size, 200.0);
     EXPECT_EQ(quote.ask_exchange, "Q");
     EXPECT_DOUBLE_EQ(quote.bid_price, 150.50);
-    EXPECT_EQ(quote.bid_size, 300u);
+    EXPECT_DOUBLE_EQ(quote.bid_size, 300.0);
     EXPECT_EQ(quote.bid_exchange, "P");
     EXPECT_EQ(quote.timestamp, "2023-01-01T10:00:00Z");
     EXPECT_EQ(quote.conditions.size(), 1u);
@@ -50,7 +50,7 @@ TEST(LatestQuoteTest, FromJSON) {
 
     LatestQuote latest_quote;
     Status status = latest_quote.fromJSON(json);
-    
+
     EXPECT_TRUE(status.ok());
     EXPECT_EQ(latest_quote.symbol, "AAPL");
     EXPECT_DOUBLE_EQ(latest_quote.quote.ask_price, 150.55);

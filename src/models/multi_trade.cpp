@@ -8,12 +8,12 @@ Status MultiTrades::fromJSON(const std::string& json) {
     JSON_FROMJSON_PRELUDE("multi trades");
 
     // Parse trades map
-    glz::generic::object_t::const_iterator trades_it = node.find("trades");
+    glz::generic_u64::object_t::const_iterator trades_it = node.find("trades");
     if (trades_it != node.end() && trades_it->second.is_object()) {
         for (const auto& [symbol, value] : trades_it->second.get_object()) {
             std::vector<Trade> symbol_trades;
             if (value.is_array()) {
-                for (const glz::generic& item : value.get_array()) {
+                for (const glz::generic_u64& item : value.get_array()) {
                     Trade trade;
                     if (Status status = trade.fromJSON(json_detail::write(item)); !status.ok()) {
                         return status;

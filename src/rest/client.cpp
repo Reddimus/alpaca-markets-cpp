@@ -4,11 +4,13 @@
 #include <glaze/json/generic.hpp>
 #include <httplib.h>
 
+#include <algorithm>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 
 #include "../detail/json.hpp"
@@ -17,6 +19,53 @@ namespace alpaca::markets {
 
 namespace {
 const char* kJSONContentType = "application/json";
+
+// One transport policy for all REST methods. Writes use a single attempt.
+class ConfiguredClient : public httplib::Client {
+public:
+    ConfiguredClient(const std::string& base_url, const Environment& environment)
+        : httplib::Client(base_url), retry_(environment.getRetryConfig()) {
+        const TimeoutConfig& timeout = environment.getTimeoutConfig();
+        set_connection_timeout(boundedTimeout(timeout.connection_timeout, std::chrono::seconds{10}));
+        set_read_timeout(boundedTimeout(timeout.read_timeout, std::chrono::seconds{30}));
+        set_write_timeout(boundedTimeout(timeout.write_timeout, std::chrono::seconds{30}));
+        set_payload_max_length(64 * 1024 * 1024);
+        set_follow_location(false);
+    }
+
+    httplib::Result Get(const std::string& path, const httplib::Headers& headers) {
+        const int retries = std::clamp(retry_.max_retries, 0, 100);
+        for (int attempt = 0;; ++attempt) {
+            httplib::Result result = httplib::Client::Get(path, headers);
+            if (!result || !retry_.shouldRetry(result->status) || attempt >= retries) {
+                return result;
+            }
+            std::this_thread::sleep_for(retry_.getDelay(attempt));
+        }
+    }
+
+private:
+    static std::chrono::seconds boundedTimeout(std::chrono::seconds value, std::chrono::seconds fallback) {
+        return value <= std::chrono::seconds::zero() ? fallback : std::min(value, std::chrono::seconds{86400});
+    }
+    RetryConfig retry_;
+};
+
+std::string encodeComponent(std::string_view value) {
+    constexpr char hex[] = "0123456789ABCDEF";
+    std::string encoded;
+    for (const unsigned char c : value) {
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+            c == '.' || c == '~') {
+            encoded.push_back(static_cast<char>(c));
+        } else {
+            encoded.push_back('%');
+            encoded.push_back(hex[c >> 4]);
+            encoded.push_back(hex[c & 15]);
+        }
+    }
+    return encoded;
+}
 
 httplib::Headers makeHeaders(const Environment& environment) {
     return {
@@ -31,11 +80,11 @@ httplib::Headers makeHeaders(const Environment& environment) {
 // each element's JSON to the corresponding model's fromJSON(string).
 
 template <class T>
-Status walkArrayInto(const glz::generic& root, std::vector<T>& out) {
+Status walkArrayInto(const glz::generic_u64& root, std::vector<T>& out) {
     if (!root.is_array()) {
         return Status(1, "Expected JSON array at root");
     }
-    for (const glz::generic& elem : root.get_array()) {
+    for (const glz::generic_u64& elem : root.get_array()) {
         T item;
         if (Status s = item.fromJSON(json_detail::write(elem)); !s.ok()) {
             return s;
@@ -46,16 +95,16 @@ Status walkArrayInto(const glz::generic& root, std::vector<T>& out) {
 }
 
 template <class T>
-Status walkArrayInto(const glz::generic& root, std::string_view key, std::vector<T>& out) {
+Status walkArrayInto(const glz::generic_u64& root, std::string_view key, std::vector<T>& out) {
     if (!root.is_object()) {
         return Status();  // nothing to do; preserve previous lenient behaviour
     }
-    const glz::generic::object_t& obj = root.get_object();
-    glz::generic::object_t::const_iterator it = obj.find(key);
+    const glz::generic_u64::object_t& obj = root.get_object();
+    glz::generic_u64::object_t::const_iterator it = obj.find(key);
     if (it == obj.end() || !it->second.is_array()) {
         return Status();
     }
-    for (const glz::generic& elem : it->second.get_array()) {
+    for (const glz::generic_u64& elem : it->second.get_array()) {
         T item;
         if (Status s = item.fromJSON(json_detail::write(elem)); !s.ok()) {
             return s;
@@ -66,12 +115,12 @@ Status walkArrayInto(const glz::generic& root, std::string_view key, std::vector
 }
 
 template <class T>
-Status walkObjectIntoMap(const glz::generic& root, std::string_view key, std::map<std::string, T>& out) {
+Status walkObjectIntoMap(const glz::generic_u64& root, std::string_view key, std::map<std::string, T>& out) {
     if (!root.is_object()) {
         return Status();
     }
-    const glz::generic::object_t& obj = root.get_object();
-    glz::generic::object_t::const_iterator it = obj.find(key);
+    const glz::generic_u64::object_t& obj = root.get_object();
+    glz::generic_u64::object_t::const_iterator it = obj.find(key);
     if (it == obj.end() || !it->second.is_object()) {
         return Status();
     }
@@ -87,19 +136,19 @@ Status walkObjectIntoMap(const glz::generic& root, std::string_view key, std::ma
 
 // Extract a nested object-typed field's JSON string back out, if present
 // and an object.
-std::optional<std::string> extractSubObjectJson(const glz::generic& root, std::string_view key) {
+std::optional<std::string> extractSubObjectJson(const glz::generic_u64& root, std::string_view key) {
     if (!root.is_object()) {
         return std::nullopt;
     }
-    const glz::generic::object_t& obj = root.get_object();
-    glz::generic::object_t::const_iterator it = obj.find(key);
+    const glz::generic_u64::object_t& obj = root.get_object();
+    glz::generic_u64::object_t::const_iterator it = obj.find(key);
     if (it == obj.end() || !it->second.is_object()) {
         return std::nullopt;
     }
     return json_detail::write(it->second);
 }
 
-bool extractStringField(const glz::generic& root, std::string_view key, std::string& out) {
+bool extractStringField(const glz::generic_u64& root, std::string_view key, std::string& out) {
     if (!root.is_object()) {
         return false;
     }
@@ -120,9 +169,9 @@ APIError parseAPIError(int status_code, const std::string& body) {
     int api_code = 0;
     std::string message = body;
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, body); !ec && root.is_object()) {
-        const glz::generic::object_t& obj = root.get_object();
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, body); !ec && root.is_object()) {
+        const glz::generic_u64::object_t& obj = root.get_object();
         int parsed_code = 0;
         if (json_detail::obj_get_int(obj, "code", parsed_code)) {
             api_code = parsed_code;
@@ -161,7 +210,7 @@ Client::Client(Environment& environment) {
 std::pair<Status, Account> Client::getAccount() const {
     Account account;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get("/v2/account", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account returned an empty response"), account);
@@ -177,7 +226,7 @@ std::pair<Status, Account> Client::getAccount() const {
 std::pair<Status, AccountConfigurations> Client::getAccountConfigurations() const {
     AccountConfigurations account_configurations;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get("/v2/account/configurations", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/account/configurations returned an empty response"),
@@ -199,11 +248,11 @@ std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(boo
                                                                              bool suspend_trade) const {
     AccountConfigurations account_configurations;
 
-    // Build the patch body via Glaze. Using a glz::generic ordered_map
+    // Build the patch body via Glaze. Using a glz::generic_u64 ordered_map
     // matches the field order the previous RapidJSON Writer emitted; the
     // server doesn't care about key order but log diffs stay readable.
-    glz::generic body_obj = glz::generic::object_t{};
-    glz::generic::object_t& obj = body_obj.get_object();
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = body_obj.get_object();
     obj["no_shorting"] = no_shorting;
     obj["dtbp_check"] = dtbp_check;
     obj["trade_confirm_email"] = trade_confirm_email;
@@ -211,7 +260,7 @@ std::pair<Status, AccountConfigurations> Client::updateAccountConfigurations(boo
     std::string body;
     (void)glz::write_json(body_obj, body);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp =
         client.Patch("/v2/account/configurations", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
@@ -243,7 +292,7 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
         url += "?activity_types=" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -253,7 +302,7 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), activities);
     }
 
@@ -264,14 +313,14 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
     // glz::meta with a discriminator tag, but the activity_type strings
     // are open-ended ("FILL", "DIV", "INT", "JNL", ...) and only "FILL"
     // dispatches to TradeActivity, so the explicit switch stays cheaper.
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing activities JSON"), activities);
     }
     if (!root.is_array()) {
         return std::make_pair(Status(1, "Expected array of activities"), activities);
     }
-    for (const glz::generic& elem : root.get_array()) {
+    for (const glz::generic_u64& elem : root.get_array()) {
         if (!elem.is_object()) {
             return std::make_pair(Status(1, "Activity entry wasn't an object"), activities);
         }
@@ -303,12 +352,12 @@ std::pair<Status, std::vector<std::variant<TradeActivity, NonTradeActivity>>> Cl
 std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) const {
     Order order;
 
-    std::string url = "/v2/orders/" + id;
+    std::string url = "/v2/orders/" + encodeComponent(id);
     if (nested) {
         url += "?nested=true";
     }
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -318,7 +367,7 @@ std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) co
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), order);
     }
 
@@ -328,9 +377,9 @@ std::pair<Status, Order> Client::getOrder(const std::string& id, bool nested) co
 std::pair<Status, Order> Client::getOrderByClientOrderID(const std::string& client_order_id) const {
     Order order;
 
-    std::string url = "/v2/orders:by_client_order_id?client_order_id=" + client_order_id;
+    std::string url = "/v2/orders:by_client_order_id?client_order_id=" + encodeComponent(client_order_id);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -340,7 +389,7 @@ std::pair<Status, Order> Client::getOrderByClientOrderID(const std::string& clie
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), order);
     }
 
@@ -367,7 +416,7 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
         params.insert({"nested", "true"});
     }
     std::string query_string = httplib::detail::params_to_query_str(params);
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     std::string url = "/v2/orders?" + query_string;
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
@@ -378,12 +427,12 @@ std::pair<Status, std::vector<Order>> Client::getOrders(ActionStatus status, int
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), orders);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
     }
     if (Status s = walkArrayInto(root, orders); !s.ok()) {
@@ -401,8 +450,8 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
                                              const std::string& trail_price, const std::string& trail_percent) const {
     Order order;
 
-    glz::generic body_obj = glz::generic::object_t{};
-    glz::generic::object_t& obj = body_obj.get_object();
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = body_obj.get_object();
     obj["symbol"] = symbol;
     obj["qty"] = static_cast<double>(quantity);  // serialised as integer below; v2 API accepts numeric qty for shares
     obj["side"] = orderSideToString(side);
@@ -432,8 +481,8 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
     }
 
     if (take_profit_params != nullptr) {
-        glz::generic tp = glz::generic::object_t{};
-        glz::generic::object_t& tp_obj = tp.get_object();
+        glz::generic_u64 tp = glz::generic_u64::object_t{};
+        glz::generic_u64::object_t& tp_obj = tp.get_object();
         if (!take_profit_params->limitPrice.empty()) {
             tp_obj["limit_price"] = take_profit_params->limitPrice;
         }
@@ -441,8 +490,8 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
     }
 
     if (stop_loss_params != nullptr) {
-        glz::generic sl = glz::generic::object_t{};
-        glz::generic::object_t& sl_obj = sl.get_object();
+        glz::generic_u64 sl = glz::generic_u64::object_t{};
+        glz::generic_u64::object_t& sl_obj = sl.get_object();
         if (!stop_loss_params->limitPrice.empty()) {
             sl_obj["limit_price"] = stop_loss_params->limitPrice;
         }
@@ -455,7 +504,7 @@ std::pair<Status, Order> Client::submitOrder(const std::string& symbol, int quan
     std::string body;
     (void)glz::write_json(body_obj, body);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), order);
@@ -476,8 +525,8 @@ std::pair<Status, Order> Client::submitNotionalOrder(const std::string& symbol, 
                                                      const std::string& client_order_id) const {
     Order order;
 
-    glz::generic body_obj = glz::generic::object_t{};
-    glz::generic::object_t& obj = body_obj.get_object();
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = body_obj.get_object();
     obj["symbol"] = symbol;
     obj["notional"] = notional;
     obj["side"] = orderSideToString(side);
@@ -495,7 +544,7 @@ std::pair<Status, Order> Client::submitNotionalOrder(const std::string& symbol, 
     std::string body;
     (void)glz::write_json(body_obj, body);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Post("/v2/orders", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), order);
@@ -515,8 +564,8 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
                                               const std::string& client_order_id) const {
     Order order;
 
-    glz::generic body_obj = glz::generic::object_t{};
-    glz::generic::object_t& obj = body_obj.get_object();
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = body_obj.get_object();
     obj["qty"] = static_cast<double>(quantity);
     obj["time_in_force"] = orderTimeInForceToString(tif);
     if (!limit_price.empty()) {
@@ -531,9 +580,9 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
     std::string body;
     (void)glz::write_json(body_obj, body);
 
-    std::string url = "/v2/orders/" + id;
+    std::string url = "/v2/orders/" + encodeComponent(id);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Patch(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
@@ -543,7 +592,7 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), order);
     }
 
@@ -553,7 +602,7 @@ std::pair<Status, Order> Client::replaceOrder(const std::string& id, int quantit
 std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
     std::vector<Order> orders;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Delete("/v2/orders", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/orders returned an empty response"), orders);
@@ -565,8 +614,8 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
         return std::make_pair(Status(1, ss.str()), orders);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing orders JSON"), orders);
     }
     if (Status s = walkArrayInto(root, orders); !s.ok()) {
@@ -579,8 +628,8 @@ std::pair<Status, std::vector<Order>> Client::cancelOrders() const {
 std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
     Order order;
 
-    httplib::SSLClient client(environment_.getTradingHost());
-    std::string url = "/v2/orders/" + id;
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
+    std::string url = "/v2/orders/" + encodeComponent(id);
     httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -594,7 +643,7 @@ std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), order);
     }
 
@@ -606,7 +655,7 @@ std::pair<Status, Order> Client::cancelOrder(const std::string& id) const {
 std::pair<Status, std::vector<Position>> Client::getPositions() const {
     std::vector<Position> positions;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get("/v2/positions", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
@@ -618,8 +667,8 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
         return std::make_pair(Status(1, ss.str()), positions);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
     }
     if (Status s = walkArrayInto(root, positions); !s.ok()) {
@@ -632,9 +681,9 @@ std::pair<Status, std::vector<Position>> Client::getPositions() const {
 std::pair<Status, Position> Client::getPosition(const std::string& symbol) const {
     Position position;
 
-    std::string url = "/v2/positions/" + symbol;
+    std::string url = "/v2/positions/" + encodeComponent(symbol);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -644,7 +693,7 @@ std::pair<Status, Position> Client::getPosition(const std::string& symbol) const
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), position);
     }
 
@@ -654,7 +703,7 @@ std::pair<Status, Position> Client::getPosition(const std::string& symbol) const
 std::pair<Status, std::vector<Position>> Client::closePositions() const {
     std::vector<Position> positions;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Delete("/v2/positions", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/positions returned an empty response"), positions);
@@ -666,8 +715,8 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
         return std::make_pair(Status(1, ss.str()), positions);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing positions JSON"), positions);
     }
     if (Status s = walkArrayInto(root, positions); !s.ok()) {
@@ -680,8 +729,8 @@ std::pair<Status, std::vector<Position>> Client::closePositions() const {
 std::pair<Status, Position> Client::closePosition(const std::string& symbol) const {
     Position position;
 
-    httplib::SSLClient client(environment_.getTradingHost());
-    std::string url = "/v2/positions/" + symbol;
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
+    std::string url = "/v2/positions/" + encodeComponent(symbol);
     httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -695,7 +744,7 @@ std::pair<Status, Position> Client::closePosition(const std::string& symbol) con
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), position);
     }
 
@@ -714,7 +763,7 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = "/v2/assets?" + query_string;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -724,12 +773,12 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), assets);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing assets JSON"), assets);
     }
     if (Status s = walkArrayInto(root, assets); !s.ok()) {
@@ -742,9 +791,9 @@ std::pair<Status, std::vector<Asset>> Client::getAssets(ActionStatus asset_statu
 std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
     Asset asset;
 
-    std::string url = "/v2/assets/" + symbol;
+    std::string url = "/v2/assets/" + encodeComponent(symbol);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -754,7 +803,7 @@ std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), asset);
     }
 
@@ -766,7 +815,7 @@ std::pair<Status, Asset> Client::getAsset(const std::string& symbol) const {
 std::pair<Status, Clock> Client::getClock() const {
     Clock clock;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get("/v2/clock", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/clock returned an empty response"), clock);
@@ -784,8 +833,8 @@ std::pair<Status, Clock> Client::getClock() const {
 std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& start, const std::string& end) const {
     std::vector<Date> dates;
 
-    std::string url = "/v2/calendar?start=" + start + "&end=" + end;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/calendar?start=" + encodeComponent(start) + "&end=" + encodeComponent(end);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -795,12 +844,12 @@ std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& star
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), dates);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing calendar JSON"), dates);
     }
     if (Status s = walkArrayInto(root, dates); !s.ok()) {
@@ -815,7 +864,7 @@ std::pair<Status, std::vector<Date>> Client::getCalendar(const std::string& star
 std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
     std::vector<Watchlist> watchlists;
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get("/v2/watchlists", makeHeaders(environment_));
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlists);
@@ -827,8 +876,8 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
         return std::make_pair(Status(1, ss.str()), watchlists);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing watchlists JSON"), watchlists);
     }
     if (Status s = walkArrayInto(root, watchlists); !s.ok()) {
@@ -841,8 +890,8 @@ std::pair<Status, std::vector<Watchlist>> Client::getWatchlists() const {
 std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
     Watchlist watchlist;
 
-    std::string url = "/v2/watchlists/" + id;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/watchlists/" + encodeComponent(id);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -852,7 +901,7 @@ std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), watchlist);
     }
 
@@ -862,11 +911,11 @@ std::pair<Status, Watchlist> Client::getWatchlist(const std::string& id) const {
 namespace {
 // Helper: build {"name": <name>, "symbols": [<symbols>]} body
 std::string makeWatchlistBody(const std::string& name, const std::vector<std::string>& symbols) {
-    glz::generic body_obj = glz::generic::object_t{};
-    glz::generic::object_t& obj = body_obj.get_object();
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
+    glz::generic_u64::object_t& obj = body_obj.get_object();
     obj["name"] = name;
-    glz::generic arr = glz::generic::array_t{};
-    glz::generic::array_t& a = arr.get_array();
+    glz::generic_u64 arr = glz::generic_u64::array_t{};
+    glz::generic_u64::array_t& a = arr.get_array();
     for (const std::string& symbol : symbols) {
         a.emplace_back(symbol);
     }
@@ -883,7 +932,7 @@ std::pair<Status, Watchlist> Client::createWatchlist(const std::string& name,
 
     std::string body = makeWatchlistBody(name, symbols);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Post("/v2/watchlists", makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         return std::make_pair(Status(1, "Call to /v2/watchlists returned an empty response"), watchlist);
@@ -904,8 +953,8 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
 
     std::string body = makeWatchlistBody(name, symbols);
 
-    std::string url = "/v2/watchlists/" + id;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/watchlists/" + encodeComponent(id);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Put(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
@@ -915,7 +964,7 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), watchlist);
     }
 
@@ -923,8 +972,8 @@ std::pair<Status, Watchlist> Client::updateWatchlist(const std::string& id, cons
 }
 
 Status Client::deleteWatchlist(const std::string& id) const {
-    std::string url = "/v2/watchlists/" + id;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/watchlists/" + encodeComponent(id);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -934,7 +983,7 @@ Status Client::deleteWatchlist(const std::string& id) const {
 
     if (resp->status != 200 && resp->status != 204) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return Status(1, ss.str());
     }
     return Status();
@@ -943,13 +992,13 @@ Status Client::deleteWatchlist(const std::string& id) const {
 std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id, const std::string& symbol) const {
     Watchlist watchlist;
 
-    glz::generic body_obj = glz::generic::object_t{};
+    glz::generic_u64 body_obj = glz::generic_u64::object_t{};
     body_obj.get_object()["symbol"] = symbol;
     std::string body;
     (void)glz::write_json(body_obj, body);
 
-    std::string url = "/v2/watchlists/" + id;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/watchlists/" + encodeComponent(id);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Post(url.c_str(), makeHeaders(environment_), body, kJSONContentType);
     if (!resp) {
         std::ostringstream ss;
@@ -959,7 +1008,7 @@ std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id,
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), watchlist);
     }
 
@@ -969,8 +1018,8 @@ std::pair<Status, Watchlist> Client::addSymbolToWatchlist(const std::string& id,
 std::pair<Status, Watchlist> Client::removeSymbolFromWatchlist(const std::string& id, const std::string& symbol) const {
     Watchlist watchlist;
 
-    std::string url = "/v2/watchlists/" + id + "/" + symbol;
-    httplib::SSLClient client(environment_.getTradingHost());
+    std::string url = "/v2/watchlists/" + encodeComponent(id) + "/" + encodeComponent(symbol);
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Delete(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -980,7 +1029,7 @@ std::pair<Status, Watchlist> Client::removeSymbolFromWatchlist(const std::string
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), watchlist);
     }
     return std::make_pair(watchlist.fromJSON(resp->body), watchlist);
@@ -1028,7 +1077,7 @@ std::pair<Status, PortfolioHistory> Client::getPortfolioHistory(const std::strin
     }
 
     std::string url = "/v2/account/portfolio/history" + query_string;
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1038,7 +1087,7 @@ std::pair<Status, PortfolioHistory> Client::getPortfolioHistory(const std::strin
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), portfolio_history);
     }
 
@@ -1079,7 +1128,7 @@ std::pair<Status, Bars> Client::getBars(const std::vector<std::string>& symbols,
     // Market Data API v2 endpoint
     std::string url = "/v2/stocks/bars?" + query_string;
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1089,7 +1138,7 @@ std::pair<Status, Bars> Client::getBars(const std::vector<std::string>& symbols,
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), bars);
     }
 
@@ -1100,9 +1149,9 @@ std::pair<Status, LatestTrade> Client::getLatestTrade(const std::string& symbol)
     LatestTrade latest_trade;
 
     // Market Data API v2 endpoint
-    std::string url = "/v2/stocks/" + symbol + "/trades/latest";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/trades/latest";
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1112,7 +1161,7 @@ std::pair<Status, LatestTrade> Client::getLatestTrade(const std::string& symbol)
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), latest_trade);
     }
 
@@ -1123,9 +1172,9 @@ std::pair<Status, LatestQuote> Client::getLatestQuote(const std::string& symbol)
     LatestQuote latest_quote;
 
     // Market Data API v2 endpoint
-    std::string url = "/v2/stocks/" + symbol + "/quotes/latest";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/quotes/latest";
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1135,7 +1184,7 @@ std::pair<Status, LatestQuote> Client::getLatestQuote(const std::string& symbol)
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), latest_quote);
     }
 
@@ -1153,9 +1202,9 @@ std::pair<Status, std::map<std::string, Trade>> Client::getLatestTrades(const st
         }
     }
 
-    std::string url = "/v2/stocks/trades/latest?symbols=" + symbols_string;
+    std::string url = "/v2/stocks/trades/latest?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}});
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1165,12 +1214,12 @@ std::pair<Status, std::map<std::string, Trade>> Client::getLatestTrades(const st
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), trades);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest trades JSON"), trades);
     }
     if (Status s = walkObjectIntoMap(root, "trades", trades); !s.ok()) {
@@ -1191,9 +1240,9 @@ std::pair<Status, std::map<std::string, Quote>> Client::getLatestQuotes(const st
         }
     }
 
-    std::string url = "/v2/stocks/quotes/latest?symbols=" + symbols_string;
+    std::string url = "/v2/stocks/quotes/latest?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}});
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1203,12 +1252,12 @@ std::pair<Status, std::map<std::string, Quote>> Client::getLatestQuotes(const st
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), quotes);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest quotes JSON"), quotes);
     }
     if (Status s = walkObjectIntoMap(root, "quotes", quotes); !s.ok()) {
@@ -1273,7 +1322,7 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1283,12 +1332,12 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), announcements);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing announcements JSON"), announcements);
     }
     if (!root.is_array()) {
@@ -1304,9 +1353,9 @@ std::pair<Status, std::vector<Announcement>> Client::getAnnouncements(
 std::pair<Status, Announcement> Client::getAnnouncement(const std::string& id) const {
     Announcement announcement;
 
-    std::string url = "/v2/corporate_actions/announcements/" + id;
+    std::string url = "/v2/corporate_actions/announcements/" + encodeComponent(id);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1316,7 +1365,7 @@ std::pair<Status, Announcement> Client::getAnnouncement(const std::string& id) c
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), announcement);
     }
 
@@ -1376,7 +1425,7 @@ std::pair<Status, OptionContracts> Client::getOptionContracts(
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1386,7 +1435,7 @@ std::pair<Status, OptionContracts> Client::getOptionContracts(
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), contracts);
     }
 
@@ -1396,9 +1445,9 @@ std::pair<Status, OptionContracts> Client::getOptionContracts(
 std::pair<Status, OptionContract> Client::getOptionContract(const std::string& symbol_or_id) const {
     OptionContract contract;
 
-    std::string url = "/v2/options/contracts/" + symbol_or_id;
+    std::string url = "/v2/options/contracts/" + encodeComponent(symbol_or_id);
 
-    httplib::SSLClient client(environment_.getTradingHost());
+    ConfiguredClient client(environment_.getTradingBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1408,7 +1457,7 @@ std::pair<Status, OptionContract> Client::getOptionContract(const std::string& s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), contract);
     }
 
@@ -1420,9 +1469,9 @@ std::pair<Status, OptionContract> Client::getOptionContract(const std::string& s
 std::pair<Status, Snapshot> Client::getSnapshot(const std::string& symbol) const {
     Snapshot snapshot;
 
-    std::string url = "/v2/stocks/" + symbol + "/snapshot";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/snapshot";
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1432,7 +1481,7 @@ std::pair<Status, Snapshot> Client::getSnapshot(const std::string& symbol) const
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), snapshot);
     }
 
@@ -1450,9 +1499,9 @@ std::pair<Status, std::map<std::string, Snapshot>> Client::getSnapshots(const st
         }
     }
 
-    std::string url = "/v2/stocks/snapshots?symbols=" + symbols_string;
+    std::string url = "/v2/stocks/snapshots?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}});
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1462,13 +1511,13 @@ std::pair<Status, std::map<std::string, Snapshot>> Client::getSnapshots(const st
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), snapshots);
     }
 
     // Response is object keyed by symbol (no "snapshots" wrapper here).
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing snapshots JSON"), snapshots);
     }
     if (root.is_object()) {
@@ -1489,9 +1538,9 @@ std::pair<Status, std::map<std::string, Snapshot>> Client::getSnapshots(const st
 std::pair<Status, Bar> Client::getLatestBar(const std::string& symbol) const {
     Bar bar;
 
-    std::string url = "/v2/stocks/" + symbol + "/bars/latest";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/bars/latest";
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1501,12 +1550,12 @@ std::pair<Status, Bar> Client::getLatestBar(const std::string& symbol) const {
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), bar);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest bar JSON"), bar);
     }
     if (std::optional<std::string> sub = extractSubObjectJson(root, "bar"); sub.has_value()) {
@@ -1527,9 +1576,9 @@ std::pair<Status, std::map<std::string, Bar>> Client::getLatestBars(const std::v
         }
     }
 
-    std::string url = "/v2/stocks/bars/latest?symbols=" + symbols_string;
+    std::string url = "/v2/stocks/bars/latest?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}});
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1539,12 +1588,12 @@ std::pair<Status, std::map<std::string, Bar>> Client::getLatestBars(const std::v
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), bars);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing latest bars JSON"), bars);
     }
     if (Status s = walkObjectIntoMap(root, "bars", bars); !s.ok()) {
@@ -1579,12 +1628,12 @@ std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(
     }
 
     std::string query_string = httplib::detail::params_to_query_str(params);
-    std::string url = "/v2/stocks/" + symbol + "/trades";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/trades";
     if (!query_string.empty()) {
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1594,12 +1643,12 @@ std::pair<Status, std::pair<std::vector<Trade>, std::string>> Client::getTrades(
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), std::make_pair(trades, next_page_token));
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing trades JSON"),
                               std::make_pair(trades, next_page_token));
     }
@@ -1634,12 +1683,12 @@ std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(
     }
 
     std::string query_string = httplib::detail::params_to_query_str(params);
-    std::string url = "/v2/stocks/" + symbol + "/quotes";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/quotes";
     if (!query_string.empty()) {
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1649,12 +1698,12 @@ std::pair<Status, std::pair<std::vector<Quote>, std::string>> Client::getQuotes(
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), std::make_pair(quotes, next_page_token));
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing quotes JSON"),
                               std::make_pair(quotes, next_page_token));
     }
@@ -1698,7 +1747,7 @@ std::pair<Status, MultiTrades> Client::getMultiTrades(const std::vector<std::str
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = "/v2/stocks/trades?" + query_string;
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1708,7 +1757,7 @@ std::pair<Status, MultiTrades> Client::getMultiTrades(const std::vector<std::str
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), multi_trades);
     }
 
@@ -1745,7 +1794,7 @@ std::pair<Status, MultiQuotes> Client::getMultiQuotes(const std::vector<std::str
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = "/v2/stocks/quotes?" + query_string;
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1755,7 +1804,7 @@ std::pair<Status, MultiQuotes> Client::getMultiQuotes(const std::vector<std::str
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), multi_quotes);
     }
 
@@ -1784,12 +1833,12 @@ std::pair<Status, Auctions> Client::getAuctions(const std::string& symbol, const
     }
 
     std::string query_string = httplib::detail::params_to_query_str(params);
-    std::string url = "/v2/stocks/" + symbol + "/auctions";
+    std::string url = "/v2/stocks/" + encodeComponent(symbol) + "/auctions";
     if (!query_string.empty()) {
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1799,7 +1848,7 @@ std::pair<Status, Auctions> Client::getAuctions(const std::string& symbol, const
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), auctions);
     }
 
@@ -1836,7 +1885,7 @@ std::pair<Status, Auctions> Client::getMultiAuctions(const std::vector<std::stri
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = "/v2/stocks/auctions?" + query_string;
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1846,7 +1895,7 @@ std::pair<Status, Auctions> Client::getMultiAuctions(const std::vector<std::stri
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), auctions);
     }
 
@@ -1902,7 +1951,7 @@ std::pair<Status, CorporateActions> Client::getCorporateActions(const std::vecto
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1912,7 +1961,7 @@ std::pair<Status, CorporateActions> Client::getCorporateActions(const std::vecto
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), corporate_actions);
     }
 
@@ -1963,7 +2012,7 @@ std::pair<Status, NewsArticles> Client::getNews(const std::vector<std::string>& 
         url += "?" + query_string;
     }
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -1973,7 +2022,7 @@ std::pair<Status, NewsArticles> Client::getNews(const std::vector<std::string>& 
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), news_articles);
     }
 
@@ -1993,20 +2042,20 @@ std::string makeCryptoUrl(const std::string& path, CryptoFeed feed) {
 template <class T>
 Status extractSymbolFromObjectMap(const std::string& body, const std::string& outer_key, const std::string& symbol,
                                   T& target_model, const std::string& not_found_msg) {
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, body); ec) {
         return Status(1, "Received parse error when deserializing " + outer_key + " JSON");
     }
     if (!root.is_object()) {
         return Status(1, not_found_msg);
     }
-    const glz::generic::object_t& root_obj = root.get_object();
-    glz::generic::object_t::const_iterator outer_it = root_obj.find(outer_key);
+    const glz::generic_u64::object_t& root_obj = root.get_object();
+    glz::generic_u64::object_t::const_iterator outer_it = root_obj.find(outer_key);
     if (outer_it == root_obj.end() || !outer_it->second.is_object()) {
         return Status(1, not_found_msg);
     }
-    const glz::generic::object_t& outer = outer_it->second.get_object();
-    glz::generic::object_t::const_iterator sym_it = outer.find(symbol);
+    const glz::generic_u64::object_t& outer = outer_it->second.get_object();
+    glz::generic_u64::object_t::const_iterator sym_it = outer.find(symbol);
     if (sym_it == outer.end() || !sym_it->second.is_object()) {
         return Status(1, not_found_msg);
     }
@@ -2017,9 +2066,9 @@ Status extractSymbolFromObjectMap(const std::string& body, const std::string& ou
 std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(const std::string& symbol, CryptoFeed feed) const {
     CryptoTrade trade;
 
-    std::string url = makeCryptoUrl("/latest/trades?symbols=" + symbol, feed);
+    std::string url = makeCryptoUrl("/latest/trades?symbols=" + encodeComponent(symbol), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2029,7 +2078,7 @@ std::pair<Status, CryptoTrade> Client::getLatestCryptoTrade(const std::string& s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), trade);
     }
 
@@ -2049,9 +2098,10 @@ std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTra
         }
     }
 
-    std::string url = makeCryptoUrl("/latest/trades?symbols=" + symbols_string, feed);
+    std::string url =
+        makeCryptoUrl("/latest/trades?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}}), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2061,12 +2111,12 @@ std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTra
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), trades);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto trades JSON"), trades);
     }
     if (Status s = walkObjectIntoMap(root, "trades", trades); !s.ok()) {
@@ -2079,9 +2129,9 @@ std::pair<Status, std::map<std::string, CryptoTrade>> Client::getLatestCryptoTra
 std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(const std::string& symbol, CryptoFeed feed) const {
     CryptoQuote quote;
 
-    std::string url = makeCryptoUrl("/latest/quotes?symbols=" + symbol, feed);
+    std::string url = makeCryptoUrl("/latest/quotes?symbols=" + encodeComponent(symbol), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2091,7 +2141,7 @@ std::pair<Status, CryptoQuote> Client::getLatestCryptoQuote(const std::string& s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), quote);
     }
 
@@ -2111,9 +2161,10 @@ std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuo
         }
     }
 
-    std::string url = makeCryptoUrl("/latest/quotes?symbols=" + symbols_string, feed);
+    std::string url =
+        makeCryptoUrl("/latest/quotes?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}}), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2123,12 +2174,12 @@ std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuo
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), quotes);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto quotes JSON"), quotes);
     }
     if (Status s = walkObjectIntoMap(root, "quotes", quotes); !s.ok()) {
@@ -2141,9 +2192,9 @@ std::pair<Status, std::map<std::string, CryptoQuote>> Client::getLatestCryptoQuo
 std::pair<Status, CryptoBar> Client::getLatestCryptoBar(const std::string& symbol, CryptoFeed feed) const {
     CryptoBar bar;
 
-    std::string url = makeCryptoUrl("/latest/bars?symbols=" + symbol, feed);
+    std::string url = makeCryptoUrl("/latest/bars?symbols=" + encodeComponent(symbol), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2153,7 +2204,7 @@ std::pair<Status, CryptoBar> Client::getLatestCryptoBar(const std::string& symbo
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), bar);
     }
 
@@ -2173,9 +2224,10 @@ std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
         }
     }
 
-    std::string url = makeCryptoUrl("/latest/bars?symbols=" + symbols_string, feed);
+    std::string url =
+        makeCryptoUrl("/latest/bars?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}}), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2185,12 +2237,12 @@ std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), bars);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto bars JSON"), bars);
     }
     if (Status s = walkObjectIntoMap(root, "bars", bars); !s.ok()) {
@@ -2203,9 +2255,9 @@ std::pair<Status, std::map<std::string, CryptoBar>> Client::getLatestCryptoBars(
 std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(const std::string& symbol, CryptoFeed feed) const {
     CryptoSnapshot snapshot;
 
-    std::string url = makeCryptoUrl("/snapshots?symbols=" + symbol, feed);
+    std::string url = makeCryptoUrl("/snapshots?symbols=" + encodeComponent(symbol), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2215,7 +2267,7 @@ std::pair<Status, CryptoSnapshot> Client::getCryptoSnapshot(const std::string& s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), snapshot);
     }
 
@@ -2235,9 +2287,10 @@ std::pair<Status, std::map<std::string, CryptoSnapshot>> Client::getCryptoSnapsh
         }
     }
 
-    std::string url = makeCryptoUrl("/snapshots?symbols=" + symbols_string, feed);
+    std::string url =
+        makeCryptoUrl("/snapshots?" + httplib::detail::params_to_query_str({{"symbols", symbols_string}}), feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2247,12 +2300,12 @@ std::pair<Status, std::map<std::string, CryptoSnapshot>> Client::getCryptoSnapsh
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), snapshots);
     }
 
-    glz::generic root{};
-    if (glz::error_ctx ec = glz::read_json(root, resp->body); ec) {
+    glz::generic_u64 root{};
+    if (glz::error_ctx ec = glz::read<json_detail::kReadOptions>(root, resp->body); ec) {
         return std::make_pair(Status(1, "Received parse error when deserializing crypto snapshots JSON"), snapshots);
     }
     if (Status s = walkObjectIntoMap(root, "snapshots", snapshots); !s.ok()) {
@@ -2293,7 +2346,7 @@ std::pair<Status, CryptoBars> Client::getCryptoBars(const std::vector<std::strin
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = makeCryptoUrl("/bars?" + query_string, feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2303,7 +2356,7 @@ std::pair<Status, CryptoBars> Client::getCryptoBars(const std::vector<std::strin
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), crypto_bars);
     }
 
@@ -2341,7 +2394,7 @@ std::pair<Status, CryptoTrades> Client::getCryptoTrades(const std::vector<std::s
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = makeCryptoUrl("/trades?" + query_string, feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2351,7 +2404,7 @@ std::pair<Status, CryptoTrades> Client::getCryptoTrades(const std::vector<std::s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), crypto_trades);
     }
 
@@ -2389,7 +2442,7 @@ std::pair<Status, CryptoQuotes> Client::getCryptoQuotes(const std::vector<std::s
     std::string query_string = httplib::detail::params_to_query_str(params);
     std::string url = makeCryptoUrl("/quotes?" + query_string, feed);
 
-    httplib::SSLClient client(environment_.getDataHost());
+    ConfiguredClient client(environment_.getDataBaseURL(), environment_);
     httplib::Result resp = client.Get(url.c_str(), makeHeaders(environment_));
     if (!resp) {
         std::ostringstream ss;
@@ -2399,7 +2452,7 @@ std::pair<Status, CryptoQuotes> Client::getCryptoQuotes(const std::vector<std::s
 
     if (resp->status != 200) {
         std::ostringstream ss;
-        ss << "Call to " << url << " returned an HTTP " << resp->status << ": " << resp->body;
+        ss << makeErrorStatus(url, resp->status, resp->body).getMessage();
         return std::make_pair(Status(1, ss.str()), crypto_quotes);
     }
 
